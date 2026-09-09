@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "skills": {
+    "privy": {
+      "source": "docs.privy.io",
+      "sourceUrl": "https://docs.privy.io",
+      "sourceType": "well-known",
+      "computedHash": "a9474179a66e057142d25510029c69b730a3a5f8febf2d2469e083b33df6ccfb",
+      "wellKnownDigest": "sha256:202f2033af0ab6f84e3699387ed75ce831ce17aafbf599a34e3fc346f00cc8a5"
+    }
+  }
+}
