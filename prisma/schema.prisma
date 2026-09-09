@@ -1,0 +1,137 @@
+// PayGate data model.
+//
+// Privy owns approval state — which quorum signed what, and whether an intent
+// met its threshold. This database owns what Privy has no idea about: invoices,
+// memos, payee labels, roles, and the audit trail.
+//
+// Money is always integer micro-USDC (BigInt). Format only at the display edge.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Org {
+  id       String @id @default(cuid())
+  name     String
+
+  // Privy object IDs, all created together at org setup.
+  privyOrgId       String @unique
+  privyWalletId    String
+  walletAddress    String // the treasury
+  approverQuorumId String // default_key_quorum_id, threshold 2
+  memberQuorumId   String // additional_signer, threshold 1
+  memberPolicyId   String // caps what the Members quorum may authorize
+
+  // Payments at or below this clear on one signature. Above it, the Approvers
+  // quorum must sign. Mirrored into memberPolicyId's rule; changing one without
+  // the other silently breaks the guarantee.
+  thresholdMicros BigInt @default(500000000) // $500.00
+
+  members   Member[]
+  requests  PaymentRequest[]
+  events    AuditEvent[]
+  createdAt DateTime @default(now())
+}
+
+model Member {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  privyUserId   String  @unique
+  email         String
+  name          String
+  walletAddress String? // personal embedded wallet, used when paying a member
+  role          String // ADMIN | APPROVER | MEMBER
+
+  requested PaymentRequest[] @relation("Requester")
+  paidTo    PaymentRequest[] @relation("PayeeMember")
+  approvals Approval[]
+  createdAt DateTime         @default(now())
+
+  @@unique([orgId, email])
+  @@index([orgId])
+}
+
+model PaymentRequest {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  requesterId String
+  requester   Member @relation("Requester", fields: [requesterId], references: [id])
+
+  payeeType     String // ADDRESS | MEMBER
+  payeeAddress  String // resolved at submit time so history stays immutable
+  payeeMemberId String?
+  payeeMember   Member? @relation("PayeeMember", fields: [payeeMemberId], references: [id])
+  payeeLabel    String
+
+  amountMicros BigInt
+  memo         String
+
+  route         String  @default("AUTO") // AUTO | QUORUM, decided at submit
+  privyIntentId String  @unique
+  status        String  @default("PENDING") // PENDING PROCESSING EXECUTED FAILED REJECTED EXPIRED
+  txHash        String?
+  failureReason String?
+
+  invoices  Invoice[]
+  approvals Approval[]
+  events    AuditEvent[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([orgId, status])
+}
+
+model Invoice {
+  id        String         @id @default(cuid())
+  requestId String
+  request   PaymentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  filename     String // original name, for display only
+  storagePath  String // generated name on disk; never user-controlled
+  mimeType     String
+  sizeBytes    Int
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([requestId])
+}
+
+model Approval {
+  id        String         @id @default(cuid())
+  requestId String
+  request   PaymentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  memberId  String
+  member    Member         @relation(fields: [memberId], references: [id])
+
+  kind      String // AUTHORIZED | REJECTED
+  createdAt DateTime @default(now())
+
+  // One vote per member per request. Privy is idempotent per signer anyway;
+  // this keeps the UI from showing a double approval.
+  @@unique([requestId, memberId])
+}
+
+model AuditEvent {
+  id        String          @id @default(cuid())
+  orgId     String
+  org       Org             @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  requestId String?
+  request   PaymentRequest? @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  actorId   String?
+
+  // ORG_CREATED MEMBER_ADDED REQUEST_SUBMITTED INVOICE_UPLOADED
+  // APPROVED REJECTED EXECUTED FAILED THRESHOLD_CHANGED
+  type      String
+  payload   String // JSON
+  createdAt DateTime @default(now())
+
+  @@index([orgId, createdAt])
+}

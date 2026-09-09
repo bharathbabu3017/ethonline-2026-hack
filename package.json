@@ -7,7 +7,12 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "spike:arc": "tsx scripts/spike/arc-transfer.ts",
     "spike:privy": "tsx scripts/spike/privy-org-primitives.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "db:push": "prisma db push",
+    "db:studio": "prisma studio"
   },
   "repository": {
     "type": "git",
@@ -23,11 +28,22 @@
   "homepage": "https://github.com/bharathbabu3017/ethonline-2026-hack#readme",
   "private": "true",
   "dependencies": {
+    "@prisma/client": "^7.10.0",
     "@privy-io/node": "^0.34.0",
+    "@privy-io/react-auth": "^3.40.0",
+    "@stripe/stripe-js": "^9.15.0",
+    "next": "^16.3.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "viem": "^2.56.3"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.5.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "prisma": "^7.10.0",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.13",
     "typescript": "^7.0.2"
   }
