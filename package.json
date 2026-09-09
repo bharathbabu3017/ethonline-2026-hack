@@ -1,0 +1,34 @@
+{
+  "name": "paygate",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "spike:arc": "tsx scripts/spike/arc-transfer.ts",
+    "spike:privy": "tsx scripts/spike/privy-org-primitives.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bharathbabu3017/ethonline-2026-hack.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "bugs": {
+    "url": "https://github.com/bharathbabu3017/ethonline-2026-hack/issues"
+  },
+  "homepage": "https://github.com/bharathbabu3017/ethonline-2026-hack#readme",
+  "private": "true",
+  "dependencies": {
+    "@privy-io/node": "^0.34.0",
+    "viem": "^2.56.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsx": "^4.23.13",
+    "typescript": "^7.0.2"
+  }
+}

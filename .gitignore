@@ -1,0 +1,39 @@
+# Secrets — never commit. The .example template is the exception.
+.env
+.env.*
+!.env.example
+
+# Dependencies
+node_modules/
+
+# Next.js
+.next/
+out/
+next-env.d.ts
+
+# Database (SQLite lives on disk; schema + migrations are committed, data is not)
+*.db
+*.db-journal
+prisma/*.db
+prisma/*.db-journal
+
+# Uploaded invoices — user data, not source
+uploads/
+
+# Build output / caches
+dist/
+build/
+*.tsbuildinfo
+.eslintcache
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Phase 0 spike scratch state (wallet IDs from throwaway runs)
+.spike-state.json
