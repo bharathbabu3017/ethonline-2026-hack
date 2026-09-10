@@ -13,7 +13,8 @@
     "start": "next start",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "dev:seed-org": "tsx --env-file=.env.local scripts/dev/create-test-org.ts"
+    "dev:seed-org": "tsx --env-file=.env.local scripts/dev/create-test-org.ts",
+    "dev:seed-payments": "tsx --env-file=.env.local scripts/dev/create-test-payments.ts"
   },
   "repository": {
     "type": "git",
