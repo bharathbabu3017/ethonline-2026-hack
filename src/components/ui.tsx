@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 /**
  * Shared primitives.
  *
@@ -178,6 +180,42 @@ export function Truncated({ value, head = 10, tail = 8 }: { value: string; head?
     <span className="font-mono text-xs text-neutral-700" title={value}>
       {short}
     </span>
+  );
+}
+
+/**
+ * A full value with a copy button — for addresses and IDs that someone needs to
+ * paste elsewhere. Shown in full and allowed to wrap: truncating an address the
+ * user has to copy makes it useless.
+ */
+export function CopyField({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      // Clipboard can be blocked; the value is on screen in full regardless.
+    }
+  }
+
+  return (
+    <div>
+      {label && <p className="mb-1.5 text-xs text-neutral-500">{label}</p>}
+      <div className="flex items-stretch gap-2">
+        <code className="min-w-0 flex-1 break-all rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 font-mono text-xs leading-relaxed text-neutral-800">
+          {value}
+        </code>
+        <button
+          onClick={copy}
+          className="shrink-0 self-start rounded-lg border border-neutral-300 bg-white px-3 py-2.5 text-xs font-medium text-neutral-700 transition hover:bg-neutral-50"
+        >
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
   );
 }
 

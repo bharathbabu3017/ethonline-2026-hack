@@ -10,6 +10,7 @@ import {
   Badge,
   Button,
   Card,
+  CopyField,
   DataRow,
   EmptyState,
   ErrorNote,
@@ -109,9 +110,7 @@ export default function Dashboard() {
 
       {org.balances.every((b) => BigInt(b.balance) === 0n) && (
         <Card title="Fund the treasury" description="Nothing can be paid until it holds funds.">
-          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
-            <Truncated value={org.walletAddress} head={20} tail={12} />
-          </div>
+          <CopyField value={org.walletAddress} label="Send funds to this address" />
           <div className="mt-3 flex flex-wrap gap-2">
             {org.chain.faucets.map((f) => (
               <a key={f.url} href={f.url} target="_blank" rel="noreferrer">
@@ -219,8 +218,8 @@ export default function Dashboard() {
           </Card>
 
           <Card title="Treasury">
-            <dl className="divide-y divide-neutral-100">
-              <DataRow label="Address" value={<Truncated value={org.walletAddress} />} />
+            <CopyField value={org.walletAddress} label="Address" />
+            <dl className="mt-4 divide-y divide-neutral-100">
               <DataRow label="Network" value={`${org.chain.name} · ${org.chain.id}`} />
               <DataRow label="Custody" value="Privy organization wallet" />
               <DataRow label="Team" value={`${org.members.length} members`} />

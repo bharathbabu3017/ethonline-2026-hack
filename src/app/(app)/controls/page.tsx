@@ -5,6 +5,7 @@ import { formatUnits } from 'viem';
 import {
   Badge,
   Card,
+  CopyField,
   DataRow,
   ErrorNote,
   PageHeader,
@@ -118,9 +119,9 @@ export default function Controls() {
       </Card>
 
       <Card title="Treasury wallet">
-        <dl className="divide-y divide-neutral-100">
+        <CopyField value={data.wallet.address} label="Treasury address" />
+        <dl className="mt-4 divide-y divide-neutral-100">
           <DataRow label="Wallet ID" value={<Truncated value={data.wallet.id} />} />
-          <DataRow label="Address" value={<Truncated value={data.wallet.address} head={16} />} />
           <DataRow
             label="Privy organization"
             value={<Truncated value={data.wallet.organizationId} />}
