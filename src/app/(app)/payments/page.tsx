@@ -4,7 +4,18 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
-import { Badge, Button, Card, ErrorNote, Skeleton, inputClass } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  Skeleton,
+  Table,
+  Truncated,
+  inputClass,
+} from '@/components/ui';
 
 export interface PaymentRow {
   id: string;
@@ -73,33 +84,30 @@ export default function Payments() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Payments</h1>
-          <p className="mt-1 text-sm text-neutral-600">
-            Every request, who approved it, and where it settled.
-          </p>
-        </div>
-        <Link href="/payments/new">
-          <Button>New payment</Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="All payments"
+        description="Every request, who approved it, and where it settled."
+        action={
+          <Link href="/payments/new">
+            <Button>New payment</Button>
+          </Link>
+        }
+      />
 
       {loading && <Skeleton className="h-64" />}
       {error && <ErrorNote>{error}</ErrorNote>}
 
       {data && data.requests.length === 0 && (
-        <Card>
-          <div className="py-8 text-center">
-            <p className="text-sm font-medium text-neutral-800">No payments yet</p>
-            <p className="mx-auto mt-1 max-w-sm text-sm text-neutral-600">
-              Submit one with an invoice attached. Small amounts clear on your own
-              signature; larger ones wait for a second approver.
-            </p>
-            <Link href="/payments/new">
-              <Button className="mt-5">New payment</Button>
-            </Link>
-          </div>
+        <Card bodyClassName="">
+          <EmptyState
+            title="No payments yet"
+            description="Submit one with an invoice attached. Small amounts clear on your own signature; larger ones wait for a second approver."
+            action={
+              <Link href="/payments/new">
+                <Button>New payment</Button>
+              </Link>
+            }
+          />
         </Card>
       )}
 
@@ -136,35 +144,32 @@ export default function Payments() {
       )}
 
       {data && data.requests.length > 0 && rows.length === 0 && (
-        <Card>
-          <p className="py-8 text-center text-sm text-neutral-600">
-            No payments match that filter.
-          </p>
+        <Card bodyClassName="">
+          <EmptyState title="No payments match that filter" />
         </Card>
       )}
 
       {rows.length > 0 && (
-        <Card className="overflow-hidden">
-          <div className="-m-5 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-neutral-100 text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="px-5 py-3 font-medium">Payee</th>
-                  <th className="px-5 py-3 font-medium">Description</th>
-                  <th className="px-5 py-3 text-right font-medium">Amount</th>
-                  <th className="px-5 py-3 font-medium">Status</th>
-                  <th className="px-5 py-3 font-medium">Approvals</th>
-                </tr>
-              </thead>
-              <tbody>
+        <Card bodyClassName="">
+          <Table
+            head={
+              <>
+                <th className="px-5 py-2.5">Payee</th>
+                <th className="px-5 py-2.5">Description</th>
+                <th className="px-5 py-2.5 text-right">Amount</th>
+                <th className="px-5 py-2.5">Status</th>
+                <th className="px-5 py-2.5">Approvals</th>
+              </>
+            }
+          >
                 {rows.map((r) => (
-                  <tr key={r.id} className="border-b border-neutral-50 last:border-0">
+                  <tr key={r.id} className="transition hover:bg-neutral-50/60">
                     <td className="px-5 py-3">
                       <Link href={`/payments/${r.id}`} className="hover:underline">
                         <span className="font-medium">{r.payeeLabel}</span>
                       </Link>
-                      <span className="block font-mono text-xs text-neutral-400">
-                        {r.payeeAddress.slice(0, 10)}…{r.payeeAddress.slice(-6)}
+                      <span className="mt-0.5 block">
+                        <Truncated value={r.payeeAddress} head={10} tail={6} />
                       </span>
                     </td>
                     <td className="max-w-[220px] truncate px-5 py-3 text-neutral-600">
@@ -190,9 +195,7 @@ export default function Payments() {
                     </td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
-          </div>
+          </Table>
         </Card>
       )}
     </div>

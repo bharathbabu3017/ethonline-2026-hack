@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
-import { Badge, Card, ErrorNote, Skeleton } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from '@/components/ui';
 import { ApproveActions } from '@/components/approve-actions';
 import { TreasuryChanges } from '@/components/treasury-changes';
 import type { PaymentRow } from '../payments/page';
@@ -15,13 +15,10 @@ export default function Approvals() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Approvals</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Payments waiting on a signature. Approving here signs the transaction inside
-          Privy — it is what releases the money.
-        </p>
-      </div>
+      <PageHeader
+        title="Pending approvals"
+        description="Payments waiting on a signature. Approving signs the transaction with your own Privy key — it is what releases the money."
+      />
 
       <TreasuryChanges />
 
@@ -29,13 +26,11 @@ export default function Approvals() {
       {error && <ErrorNote>{error}</ErrorNote>}
 
       {data && waiting.length === 0 && (
-        <Card>
-          <div className="py-8 text-center">
-            <p className="text-sm font-medium text-neutral-800">Nothing waiting</p>
-            <p className="mt-1 text-sm text-neutral-600">
-              Payments needing a second approver will appear here.
-            </p>
-          </div>
+        <Card bodyClassName="">
+          <EmptyState
+            title="Nothing waiting"
+            description="Payments needing your signature will appear here."
+          />
         </Card>
       )}
 

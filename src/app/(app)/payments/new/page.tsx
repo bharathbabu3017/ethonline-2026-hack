@@ -8,7 +8,7 @@ import { useApprovePayment } from '@/lib/use-approve';
 import { formatUsdc } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
 import type { ApprovalGroup } from '../../groups/page';
-import { Button, Card, ErrorNote, Field, inputClass } from '@/components/ui';
+import { Button, Card, ErrorNote, Field, PageHeader, inputClass } from '@/components/ui';
 
 export default function NewPayment() {
   const router = useRouter();
@@ -86,13 +86,11 @@ export default function NewPayment() {
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">New payment</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Paid in USDC from the shared treasury.
-        </p>
-      </div>
+    <div className="mx-auto max-w-2xl space-y-6">
+      <PageHeader
+        title="New payment"
+        description="Paid in USDC from the shared treasury, once it has the approvals its group requires."
+      />
 
       <form onSubmit={submit} className="space-y-5">
         <input type="hidden" name="payeeType" value={payeeType} />

@@ -2,7 +2,7 @@
 
 import { useApi } from '@/lib/use-api';
 import type { OrgResponse } from '@/components/app-shell';
-import { Badge, Card, ErrorNote, Skeleton } from '@/components/ui';
+import { Badge, Card, ErrorNote, PageHeader, Skeleton, Table } from '@/components/ui';
 
 const ROLE_TONE = {
   ADMIN: 'indigo',
@@ -19,40 +19,36 @@ export default function Team() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Every member has a Privy embedded wallet, created on first sign-in. No seed
-          phrases, and members can be paid at their own address.
-        </p>
-      </div>
+      <PageHeader
+        title="Team management"
+        description="Every member has a Privy embedded wallet, created on first sign-in. No seed phrases, and members can be paid at their own address."
+      />
 
-      <Card>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-neutral-100 text-left text-xs uppercase tracking-wide text-neutral-500">
-              <th className="pb-2 font-medium">Name</th>
-              <th className="pb-2 font-medium">Email</th>
-              <th className="pb-2 text-right font-medium">Role</th>
-            </tr>
-          </thead>
-          <tbody>
+      <Card bodyClassName="">
+        <Table
+          head={
+            <>
+              <th className="px-5 py-2.5">Name</th>
+              <th className="px-5 py-2.5">Email</th>
+              <th className="px-5 py-2.5 text-right">Role</th>
+            </>
+          }
+        >
             {data.org.members.map((m) => (
-              <tr key={m.id} className="border-b border-neutral-50 last:border-0">
-                <td className="py-3">
+              <tr key={m.id} className="transition hover:bg-neutral-50/60">
+                <td className="px-5 py-3 font-medium">
                   {m.name}
-                  {m.isYou && <span className="ml-2 text-xs text-neutral-400">you</span>}
+                  {m.isYou && <span className="ml-2 text-xs font-normal text-neutral-400">you</span>}
                 </td>
-                <td className="py-3 text-neutral-600">{m.email}</td>
-                <td className="py-3 text-right">
+                <td className="px-5 py-3 text-neutral-600">{m.email}</td>
+                <td className="px-5 py-3 text-right">
                   <Badge tone={ROLE_TONE[m.role as keyof typeof ROLE_TONE] ?? 'neutral'}>
                     {m.role.toLowerCase()}
                   </Badge>
                 </td>
               </tr>
             ))}
-          </tbody>
-        </table>
+        </Table>
       </Card>
 
       <Card title="Changing the team">

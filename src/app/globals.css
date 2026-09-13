@@ -10,3 +10,87 @@ body {
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
 }
+
+/* --- Landing page motion -------------------------------------------------
+   Entrances are small and quick — the page should feel settled, not staged.
+   Everything here is decorative, so it is disabled outright for anyone who
+   has asked for reduced motion. */
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+.rise {
+  animation: rise 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.fade {
+  animation: fade 0.5s ease-out both;
+}
+
+/* Staggered entrance for lists and grids. */
+.rise-1 { animation-delay: 0.06s; }
+.rise-2 { animation-delay: 0.12s; }
+.rise-3 { animation-delay: 0.18s; }
+.rise-4 { animation-delay: 0.24s; }
+.rise-5 { animation-delay: 0.3s; }
+
+/* A slow shimmer across the demo card, so it reads as live rather than static. */
+.shimmer::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(99, 102, 241, 0.06),
+    transparent
+  );
+  animation: sweep 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Faint grid behind the hero. */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(23, 23, 23, 0.045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 23, 23, 0.045) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise,
+  .fade {
+    animation: none;
+  }
+  .shimmer::after {
+    animation: none;
+    background: none;
+  }
+}

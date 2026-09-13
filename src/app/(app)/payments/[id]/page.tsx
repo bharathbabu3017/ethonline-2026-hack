@@ -4,7 +4,7 @@ import { use } from 'react';
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
-import { Badge, Card, ErrorNote, Mono, Skeleton } from '@/components/ui';
+import { Badge, Card, DataRow, ErrorNote, Skeleton, Truncated } from '@/components/ui';
 import { InvoiceLink } from '@/components/invoice-link';
 import { ApproveActions } from '@/components/approve-actions';
 import { STATUS_LABEL, STATUS_TONE, type PaymentRow } from '../page';
@@ -92,13 +92,14 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
       </Card>
 
       <Card title="Details">
-        <dl className="space-y-3 text-sm">
-          <Row label="Payee" value={payment.payeeLabel} />
-          <Row label="Address" value={<Mono>{payment.payeeAddress}</Mono>} />
-          <Row label="Requested by" value={payment.requester.name} />
-          <Row label="Submitted" value={new Date(payment.createdAt).toLocaleString()} />
+        <dl className="divide-y divide-neutral-100">
+          <DataRow label="Payee" value={payment.payeeLabel} />
+          <DataRow label="Address" value={<Truncated value={payment.payeeAddress} head={16} />} />
+          <DataRow label="Requested by" value={payment.requester.name} />
+          <DataRow label="Submitted" value={new Date(payment.createdAt).toLocaleString()} />
+          {payment.group && <DataRow label="Approval group" value={payment.group.name} />}
           {payment.txHash && (
-            <Row
+            <DataRow
               label="Transaction"
               value={
                 <a
@@ -129,15 +130,6 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
           </p>
         </Card>
       )}
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="shrink-0 text-neutral-500">{label}</dt>
-      <dd className="min-w-0 truncate text-right">{value}</dd>
     </div>
   );
 }

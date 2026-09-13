@@ -2,7 +2,15 @@
 
 import { useApi } from '@/lib/use-api';
 import { formatUnits } from 'viem';
-import { Badge, Card, ErrorNote, Mono, Skeleton } from '@/components/ui';
+import {
+  Badge,
+  Card,
+  DataRow,
+  ErrorNote,
+  PageHeader,
+  Skeleton,
+  Truncated,
+} from '@/components/ui';
 
 /**
  * The Controls page reads Privy directly rather than our own database, so what
@@ -51,14 +59,16 @@ export default function Controls() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Controls</h1>
-        <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-          Read live from Privy, not from this app&apos;s database. These are the records
-          Privy evaluates inside its secure enclave every time someone tries to move money —
-          editing PayGate&apos;s own data would not change anything on this page.
-        </p>
-      </div>
+      <PageHeader
+        title="Security controls"
+        description={
+          <>
+            Read live from Privy, not from this app&apos;s database. These are the records
+            Privy evaluates when someone tries to move money — editing PayGate&apos;s own
+            data would not change anything on this page.
+          </>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-2">
         <QuorumCard
@@ -80,15 +90,21 @@ export default function Controls() {
           Attached to the Members quorum as an override policy. Privy policies are
           allowlists: anything no rule permits is denied.
         </p>
-        <dl className="mt-4 space-y-3 text-sm">
-          <Row label="Policy ID" value={<Mono>{data.policy.id}</Mono>} />
-          <Row
+        <dl className="mt-4 divide-y divide-neutral-100">
+          <DataRow label="Policy ID" value={<Truncated value={data.policy.id} />} />
+          <DataRow
             label="Amount cap"
-            value={cap ? <strong>{cap} USDC</strong> : <span className="text-neutral-400">—</span>}
+            value={
+              cap ? (
+                <strong className="tabular-nums">{cap} USDC</strong>
+              ) : (
+                <span className="text-neutral-400">No cap</span>
+              )
+            }
           />
-          <Row label="Only this token" value={<Mono>{data.chain.usdc}</Mono>} />
-          <Row label="Only this chain" value={<Mono>{data.chain.caip2}</Mono>} />
-          <Row label="Method" value={<Mono>{data.chain.rpcMethod}</Mono>} />
+          <DataRow label="Only this token" value={<Truncated value={data.chain.usdc} />} />
+          <DataRow label="Only this chain" value={<Truncated value={data.chain.caip2} />} />
+          <DataRow label="Method" value={<Truncated value={data.chain.rpcMethod} head={24} />} />
         </dl>
 
         <details className="mt-5 border-t border-neutral-100 pt-4">
@@ -102,11 +118,14 @@ export default function Controls() {
       </Card>
 
       <Card title="Treasury wallet">
-        <dl className="space-y-3 text-sm">
-          <Row label="Wallet ID" value={<Mono>{data.wallet.id}</Mono>} />
-          <Row label="Address" value={<Mono>{data.wallet.address}</Mono>} />
-          <Row label="Privy organization" value={<Mono>{data.wallet.organizationId}</Mono>} />
-          <Row
+        <dl className="divide-y divide-neutral-100">
+          <DataRow label="Wallet ID" value={<Truncated value={data.wallet.id} />} />
+          <DataRow label="Address" value={<Truncated value={data.wallet.address} head={16} />} />
+          <DataRow
+            label="Privy organization"
+            value={<Truncated value={data.wallet.organizationId} />}
+          />
+          <DataRow
             label="Settlement"
             value={
               <span className="flex items-center justify-end gap-2">
@@ -136,9 +155,9 @@ function QuorumCard({
   return (
     <Card title={title} action={<Badge tone={tone}>{threshold} of {size}</Badge>}>
       <p className="-mt-1 text-sm text-neutral-600">{note}</p>
-      <dl className="mt-4 space-y-3 text-sm">
-        <Row label="Quorum ID" value={<Mono>{quorum.id}</Mono>} />
-        <Row
+      <dl className="mt-4 divide-y divide-neutral-100">
+        <DataRow label="Quorum ID" value={<Truncated value={quorum.id} />} />
+        <DataRow
           label="Signatures required"
           value={
             <strong>
@@ -167,13 +186,4 @@ function findAmountCap(policy: { rules?: unknown[] }): string | null {
     /* display-only; fall through to null */
   }
   return null;
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="shrink-0 text-neutral-500">{label}</dt>
-      <dd className="min-w-0 truncate text-right">{value}</dd>
-    </div>
-  );
 }

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePrivy } from '@privy-io/react-auth';
 import { apiFetch } from '@/lib/use-api';
-import { Button, Card, ErrorNote, Field, inputClass } from '@/components/ui';
+import { Button, Card, ErrorNote, Field, PageHeader, inputClass } from '@/components/ui';
 
 type Row = { email: string; name: string; role: 'APPROVER' | 'MEMBER' };
 
@@ -55,14 +55,13 @@ export default function Onboarding() {
   }
 
   return (
-    <main className="mx-auto max-w-2xl px-6 py-16">
-      <h1 className="text-2xl font-semibold tracking-tight">Set up your organization</h1>
-      <p className="mt-2 text-sm text-neutral-600">
-        This creates a shared treasury wallet and the approval rules that govern it. Both
-        live in Privy, not in this app.
-      </p>
+    <main className="mx-auto max-w-2xl space-y-6 px-6 py-16">
+      <PageHeader
+        title="Set up your organization"
+        description="This creates a shared treasury wallet and the approval rules that govern it. Both live in Privy, not in this app."
+      />
 
-      <form onSubmit={submit} className="mt-8 space-y-5">
+      <form onSubmit={submit} className="space-y-5">
         <Card>
           <div className="space-y-5">
             <Field label="Company name">

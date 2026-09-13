@@ -1,20 +1,39 @@
 'use client';
 
+import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
-import { Badge, Card, ErrorNote, Mono, Skeleton, Stat } from '@/components/ui';
+import type { PaymentRow } from '../payments/page';
+import type { ApprovalGroup } from '../groups/page';
+import {
+  Badge,
+  Button,
+  Card,
+  DataRow,
+  EmptyState,
+  ErrorNote,
+  PageHeader,
+  Skeleton,
+  Stat,
+  Truncated,
+} from '@/components/ui';
 
 export default function Dashboard() {
   const { data, error, loading } = useApi<OrgResponse>('/api/org', { pollMs: 15000 });
+  const { data: payments } = useApi<{ requests: PaymentRow[] }>('/api/requests', {
+    pollMs: 15000,
+  });
+  const { data: groupData } = useApi<{ groups: ApprovalGroup[] }>('/api/groups');
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-9 w-64" />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <Skeleton /> <Skeleton /> <Skeleton />
+      <div className="space-y-6">
+        <Skeleton className="h-16" />
+        <div className="grid gap-4 sm:grid-cols-4">
+          <Skeleton /> <Skeleton /> <Skeleton /> <Skeleton />
         </div>
+        <Skeleton className="h-64" />
       </div>
     );
   }
@@ -23,127 +42,154 @@ export default function Dashboard() {
 
   const { org } = data;
   const balance = BigInt(org.balanceMicros);
-  const threshold = BigInt(org.thresholdMicros);
-  const approvers = org.members.filter((m) => m.role !== 'MEMBER').length;
-  const unfunded = balance === 0n;
+  const rows = payments?.requests ?? [];
+
+  const pending = rows.filter((r) => r.status === 'PENDING');
+  const waitingOnYou = pending.filter((r) => r.youCanApprove && !r.youApproved);
+  const paid = rows.filter((r) => r.status === 'EXECUTED');
+  const paidTotal = paid.reduce((sum, r) => sum + BigInt(r.amountMicros), 0n);
+  const pendingTotal = pending.reduce((sum, r) => sum + BigInt(r.amountMicros), 0n);
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{org.name}</h1>
-        <p className="mt-1 text-sm text-neutral-600">
-          Shared treasury on {org.chain.name}, governed by a {approvers}-person approver quorum.
-        </p>
-      </div>
+    <>
+      <PageHeader
+        title={org.name}
+        description={`Shared USDC treasury on ${org.chain.name}, governed by ${
+          groupData?.groups.length ?? 0
+        } approval rules.`}
+        action={
+          <Link href="/payments/new">
+            <Button>New payment</Button>
+          </Link>
+        }
+      />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="Treasury balance"
+          label="Available"
           value={`${formatUsdc(balance)} USDC`}
-          hint={
-            org.chain.gasIsUsdc
-              ? 'USDC also pays gas on this chain'
-              : 'Gas is paid separately in ETH'
-          }
+          hint={org.chain.gasIsUsdc ? 'Also covers gas' : 'Gas paid separately in ETH'}
         />
         <Stat
-          label="Auto-approve limit"
-          value={`${formatUsdc(threshold)} USDC`}
-          hint="Above this, a second approver must sign"
+          label="Awaiting approval"
+          value={formatUsdc(pendingTotal)}
+          hint={`${pending.length} payment${pending.length === 1 ? '' : 's'} in the queue`}
         />
         <Stat
-          label="Team"
-          value={String(org.members.length)}
-          hint={`${approvers} can approve large payments`}
+          label="Waiting on you"
+          value={String(waitingOnYou.length)}
+          hint={waitingOnYou.length ? 'Needs your signature' : 'Nothing to approve'}
+          accent={waitingOnYou.length > 0}
+        />
+        <Stat
+          label="Paid to date"
+          value={formatUsdc(paidTotal)}
+          hint={`${paid.length} settled payment${paid.length === 1 ? '' : 's'}`}
         />
       </div>
 
-      {unfunded && (
-        <Card title="Fund the treasury">
-          <p className="text-sm text-neutral-600">
-            The treasury is empty. Send test USDC to the address below
-            {org.chain.gasIsUsdc ? '' : ', plus a little ETH to cover gas'}.
-          </p>
-          <div className="mt-3 rounded-lg bg-neutral-50 px-3 py-2">
-            <Mono>{org.walletAddress}</Mono>
+      {balance === 0n && (
+        <Card title="Fund the treasury" description="Nothing can be paid until it holds USDC.">
+          <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
+            <Truncated value={org.walletAddress} head={20} tail={12} />
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             {org.chain.faucets.map((f) => (
-              <a
-                key={f.url}
-                href={f.url}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-medium transition hover:bg-neutral-50"
-              >
-                {f.label} ↗
+              <a key={f.url} href={f.url} target="_blank" rel="noreferrer">
+                <Button variant="secondary" size="sm">
+                  {f.label} ↗
+                </Button>
               </a>
             ))}
           </div>
         </Card>
       )}
 
-      <Card title="How approvals work here">
-        <ol className="space-y-3 text-sm text-neutral-700">
-          <Step n={1}>
-            Anyone on the team submits a payment with an invoice attached.
-          </Step>
-          <Step n={2}>
-            It is assigned an{' '}
-            <a className="text-indigo-600 underline" href="/groups">
-              approval group
-            </a>{' '}
-            — a rule naming who may approve, how many of them, and up to what amount.
-          </Step>
-          <Step n={3}>
-            Each approver signs in their own browser with their own Privy key. PayGate
-            never holds signing material, so it cannot approve on anyone&apos;s behalf.
-          </Step>
-          <Step n={4}>
-            Once enough signatures exist, they go to Privy together, which checks them
-            against the treasury&apos;s key quorum before moving anything. See{' '}
-            <a className="text-indigo-600 underline" href="/controls">
-              Controls
-            </a>
-            .
-          </Step>
-        </ol>
-      </Card>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card
+          className="lg:col-span-2"
+          title="Needs your approval"
+          description="Payments you are able to sign for"
+          action={
+            <Link
+              href="/approvals"
+              className="text-xs font-medium text-indigo-600 hover:underline"
+            >
+              View all
+            </Link>
+          }
+          bodyClassName=""
+        >
+          {waitingOnYou.length === 0 ? (
+            <EmptyState
+              title="Nothing waiting on you"
+              description="Payments needing your signature will appear here."
+            />
+          ) : (
+            <ul className="divide-y divide-neutral-100">
+              {waitingOnYou.slice(0, 5).map((r) => (
+                <li key={r.id} className="flex items-center justify-between gap-4 px-5 py-3">
+                  <div className="min-w-0">
+                    <Link
+                      href={`/payments/${r.id}`}
+                      className="text-sm font-medium hover:underline"
+                    >
+                      {formatUsdc(BigInt(r.amountMicros))} USDC — {r.payeeLabel}
+                    </Link>
+                    <p className="mt-0.5 truncate text-xs text-neutral-500">
+                      {r.memo} · requested by {r.requester.name}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {r.group && <Badge tone="neutral">{r.group.name}</Badge>}
+                    <Badge tone="amber">
+                      {r.approvals.filter((a) => a.kind === 'AUTHORIZED').length}/
+                      {r.approvalsRequired}
+                    </Badge>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
 
-      <Card title="Treasury">
-        <dl className="space-y-3 text-sm">
-          <Row label="Address" value={<Mono>{org.walletAddress}</Mono>} />
-          <Row
-            label="Network"
-            value={
-              <span className="flex items-center gap-2">
-                {org.chain.name} <Badge tone="neutral">chain {org.chain.id}</Badge>
-              </span>
-            }
-          />
-          <Row label="Custody" value="Privy organization wallet — no seed phrase" />
-        </dl>
-      </Card>
-    </div>
-  );
-}
+        <div className="space-y-6">
+          <Card title="Approval rules" bodyClassName="">
+            <ul className="divide-y divide-neutral-100">
+              {(groupData?.groups ?? []).map((g) => (
+                <li key={g.id} className="px-5 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-medium">{g.name}</span>
+                    <Badge tone={g.threshold > 1 ? 'amber' : 'neutral'}>
+                      {g.threshold} approval{g.threshold === 1 ? '' : 's'}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    {g.maxAmountMicros
+                      ? `Up to ${formatUsdc(BigInt(g.maxAmountMicros))} USDC`
+                      : 'No limit'}{' '}
+                    · {g.members.length} approver{g.members.length === 1 ? '' : 's'}
+                  </p>
+                </li>
+              ))}
+              {(groupData?.groups.length ?? 0) === 0 && (
+                <li className="px-5 py-6 text-center text-sm text-neutral-500">
+                  No approval rules yet.
+                </li>
+              )}
+            </ul>
+          </Card>
 
-function Step({ n, children }: { n: number; children: React.ReactNode }) {
-  return (
-    <li className="flex gap-3">
-      <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-neutral-100 text-xs font-medium text-neutral-600">
-        {n}
-      </span>
-      <span>{children}</span>
-    </li>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="shrink-0 text-neutral-500">{label}</dt>
-      <dd className="min-w-0 truncate text-right">{value}</dd>
-    </div>
+          <Card title="Treasury">
+            <dl className="divide-y divide-neutral-100">
+              <DataRow label="Address" value={<Truncated value={org.walletAddress} />} />
+              <DataRow label="Network" value={`${org.chain.name} · ${org.chain.id}`} />
+              <DataRow label="Custody" value="Privy organization wallet" />
+              <DataRow label="Team" value={`${org.members.length} members`} />
+            </dl>
+          </Card>
+        </div>
+      </div>
+    </>
   );
 }

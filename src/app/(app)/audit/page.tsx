@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
 import { activeChain } from '@/lib/chain';
-import { Badge, Card, ErrorNote, Skeleton } from '@/components/ui';
+import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from '@/components/ui';
 
 interface AuditEvent {
   id: string;
@@ -51,22 +51,18 @@ export default function Audit() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Activity</h1>
-        <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-          Every request, approval and settlement, in order. Each entry records who acted
-          and when — approvals are signed by the approver, so this is a record of
-          signatures, not just clicks.
-        </p>
-      </div>
+      <PageHeader
+        title="Audit activity"
+        description="Every request, approval and settlement, in order. Each entry records who acted and when — approvals are signed by the approver, so this is a record of signatures, not just clicks."
+      />
 
       {events.length === 0 ? (
-        <Card>
-          <p className="py-8 text-center text-sm text-neutral-600">Nothing has happened yet.</p>
+        <Card bodyClassName="">
+          <EmptyState title="Nothing has happened yet" />
         </Card>
       ) : (
-        <Card className="overflow-hidden">
-          <ol className="-m-5 divide-y divide-neutral-100">
+        <Card bodyClassName="">
+          <ol className="divide-y divide-neutral-100">
             {events.map((e) => (
               <li key={e.id} className="flex items-start gap-4 px-5 py-3.5">
                 <Badge tone={TONE[e.type] ?? 'neutral'}>{LABEL[e.type] ?? e.type}</Badge>

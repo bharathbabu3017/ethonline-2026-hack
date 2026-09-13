@@ -5,7 +5,18 @@ import { useState } from 'react';
 import { apiFetch, useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
-import { Badge, Button, Card, ErrorNote, Field, Skeleton, inputClass } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  DataRow,
+  EmptyState,
+  ErrorNote,
+  Field,
+  PageHeader,
+  Skeleton,
+  inputClass,
+} from '@/components/ui';
 
 export interface ApprovalGroup {
   id: string;
@@ -29,20 +40,11 @@ export default function Groups() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Approval groups</h1>
-          <p className="mt-1 max-w-2xl text-sm text-neutral-600">
-            Each group is a rule for releasing money: who may approve, how many of them, and
-            up to what amount. Every group is a separate key quorum and policy on the
-            treasury, so one wallet can carry different limits for grants, payroll, or
-            contractors.
-          </p>
-        </div>
-        {isAdmin && !creating && (
-          <Button onClick={() => setCreating(true)}>New group</Button>
-        )}
-      </div>
+      <PageHeader
+        title="Approval groups"
+        description="Each group is a rule for releasing money: who may approve, how many of them, and up to what amount. Every group is its own Privy key quorum and policy, so one treasury can carry different limits for grants, payroll, or contractors."
+        action={isAdmin && !creating ? <Button onClick={() => setCreating(true)}>New group</Button> : undefined}
+      />
 
       {creating && orgData?.org && (
         <NewGroupForm
@@ -73,8 +75,8 @@ export default function Groups() {
               <p className="-mt-1 text-sm text-neutral-600">{g.description}</p>
             )}
 
-            <dl className="mt-4 space-y-2.5 text-sm">
-              <Row
+            <dl className="mt-4 divide-y divide-neutral-100">
+              <DataRow
                 label="Limit"
                 value={
                   g.maxAmountMicros
@@ -82,8 +84,8 @@ export default function Groups() {
                     : 'No limit'
                 }
               />
-              <Row label="Approvers" value={g.members.map((m) => m.name).join(', ') || '—'} />
-              <Row
+              <DataRow label="Approvers" value={g.members.map((m) => m.name).join(', ') || '—'} />
+              <DataRow
                 label="Enforced by"
                 value={
                   g.attachedToWallet ? (
@@ -109,10 +111,8 @@ export default function Groups() {
       </div>
 
       {data && data.groups.length === 0 && !loading && (
-        <Card>
-          <p className="py-8 text-center text-sm text-neutral-600">
-            No approval groups yet.
-          </p>
+        <Card bodyClassName="">
+          <EmptyState title="No approval groups yet" />
         </Card>
       )}
     </div>
@@ -235,14 +235,5 @@ function NewGroupForm({
         </div>
       </form>
     </Card>
-  );
-}
-
-function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="shrink-0 text-neutral-500">{label}</dt>
-      <dd className="min-w-0 truncate text-right">{value}</dd>
-    </div>
   );
 }
