@@ -1,8 +1,9 @@
 import type { PolicyCreateParams } from '@privy-io/node/resources';
-import { privy, privyApi } from './privy-server';
+import { privyApi } from './privy-server';
 import { activeChain } from './chain';
 import { toPolicyHex } from './money';
 import { db } from './db';
+import { proposeGroupAttachment } from './wallet-changes';
 
 /**
  * Approval groups.
@@ -98,6 +99,9 @@ export interface CreateGroupInput {
   maxAmountMicros: bigint | null;
   memberIds: string[];
   isDefault?: boolean;
+  /// Member proposing the change. Omitted during org setup, where there is no
+  /// one yet to sign and the starting groups are PayGate-enforced.
+  proposedById?: string;
 }
 
 export async function createApprovalGroup(input: CreateGroupInput) {
@@ -126,31 +130,14 @@ export async function createApprovalGroup(input: CreateGroupInput) {
     buildGroupPolicy(org.name, input.name, input.maxAmountMicros),
   );
 
-  // Attach to the treasury so Privy applies this group's policy when it signs.
-  // Updating a wallet needs the owner quorum's signature, which the server
-  // cannot produce — so treat failure as non-fatal and record that the group
-  // is enforced by PayGate alone.
-  let attached = false;
-  try {
-    await privy.wallets().update(org.privyWalletId, {
-      additional_signers: [{ signer_id: quorum.id, override_policy_ids: [policy.id] }],
-    });
-    attached = true;
-  } catch (error) {
-    console.warn(
-      `[approval-groups] could not attach "${input.name}" to the treasury:`,
-      error instanceof Error ? error.message.slice(0, 160) : error,
-    );
-  }
-
-  return db.approvalGroup.create({
+  const group = await db.approvalGroup.create({
     data: {
       orgId: org.id,
       name: input.name,
       description: input.description ?? null,
       privyQuorumId: quorum.id,
       privyPolicyId: policy.id,
-      attachedToWallet: attached,
+      attachedToWallet: false,
       threshold: input.threshold,
       maxAmountMicros: input.maxAmountMicros,
       isDefault: input.isDefault ?? false,
@@ -158,6 +145,20 @@ export async function createApprovalGroup(input: CreateGroupInput) {
     },
     include: { members: true },
   });
+
+  // Attaching the group to the treasury is an owner-level action, so it is
+  // proposed here and applied once enough approvers have signed it. Until then
+  // the group's rules are enforced by PayGate rather than by Privy.
+  if (input.proposedById) {
+    await proposeGroupAttachment({
+      orgId: org.id,
+      groupId: group.id,
+      groupName: group.name,
+      createdById: input.proposedById,
+    });
+  }
+
+  return group;
 }
 
 /**

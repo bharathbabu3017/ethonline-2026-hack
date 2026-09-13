@@ -31,9 +31,14 @@ model Org {
   // the other silently breaks the guarantee.
   thresholdMicros BigInt @default(500000000) // $500.00
 
+  /// Signatures the owner quorum requires. Mirrors the Privy key quorum that
+  /// owns the treasury; changing one without the other breaks wallet updates.
+  ownerThreshold Int @default(2)
+
   members   Member[]
   requests  PaymentRequest[]
   groups    ApprovalGroup[]
+  changes   WalletChange[]
   events    AuditEvent[]
   createdAt DateTime @default(now())
 }
@@ -68,11 +73,57 @@ model ApprovalGroup {
 
   members  ApprovalGroupMember[]
   requests PaymentRequest[]
+  changes  WalletChange[]
 
   createdAt DateTime @default(now())
 
   @@unique([orgId, name])
   @@index([orgId])
+}
+
+/// A pending change to the treasury wallet's configuration.
+///
+/// Attaching an approval group as a signer is an owner-level action: Privy
+/// requires signatures meeting the owner quorum's threshold, the same bar as a
+/// large payment. Changing who may spend is at least as sensitive as spending,
+/// so the same two-person rule applies.
+model WalletChange {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  type        String // ATTACH_GROUP
+  description String
+
+  groupId String?
+  group   ApprovalGroup? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  /// The exact wallet update every approver signs, fixed when the change is
+  /// proposed so each signature covers identical bytes.
+  requestBody String
+
+  status        String  @default("PENDING") // PENDING | APPLIED | FAILED | REJECTED
+  failureReason String?
+
+  createdById String
+  approvals   WalletChangeApproval[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId, status])
+}
+
+model WalletChangeApproval {
+  changeId String
+  change   WalletChange @relation(fields: [changeId], references: [id], onDelete: Cascade)
+  memberId String
+  member   Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  signature String
+  createdAt DateTime @default(now())
+
+  @@id([changeId, memberId])
 }
 
 model ApprovalGroupMember {
@@ -111,6 +162,7 @@ model Member {
   paidTo    PaymentRequest[]     @relation("PayeeMember")
   approvals Approval[]
   groups    ApprovalGroupMember[]
+  changeApprovals WalletChangeApproval[]
   createdAt DateTime         @default(now())
 
   @@unique([orgId, email])

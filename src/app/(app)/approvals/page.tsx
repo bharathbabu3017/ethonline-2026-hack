@@ -5,6 +5,7 @@ import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
 import { Badge, Card, ErrorNote, Skeleton } from '@/components/ui';
 import { ApproveActions } from '@/components/approve-actions';
+import { TreasuryChanges } from '@/components/treasury-changes';
 import type { PaymentRow } from '../payments/page';
 
 export default function Approvals() {
@@ -21,6 +22,8 @@ export default function Approvals() {
           Privy — it is what releases the money.
         </p>
       </div>
+
+      <TreasuryChanges />
 
       {loading && <Skeleton className="h-48" />}
       {error && <ErrorNote>{error}</ErrorNote>}

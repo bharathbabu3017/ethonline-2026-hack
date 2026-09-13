@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import { apiFetch, useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
@@ -83,20 +84,25 @@ export default function Groups() {
               />
               <Row label="Approvers" value={g.members.map((m) => m.name).join(', ') || '—'} />
               <Row
-                label="Enforcement"
+                label="Enforced by"
                 value={
                   g.attachedToWallet ? (
-                    <span className="text-emerald-700">Privy signer on the treasury</span>
+                    <span className="text-emerald-700">Privy — signer on the treasury</span>
                   ) : (
-                    <span className="text-neutral-500">PayGate</span>
+                    <span className="text-amber-700">PayGate — attachment pending</span>
                   )
                 }
               />
             </dl>
 
-            <div className="mt-4 flex flex-wrap gap-2 border-t border-neutral-100 pt-3">
+            <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
               {g.isDefault && <Badge tone="indigo">Default</Badge>}
               {g.youCanApprove && <Badge tone="green">You can approve</Badge>}
+              {!g.attachedToWallet && (
+                <Link href="/approvals" className="text-xs text-indigo-600 hover:underline">
+                  Needs approvals to attach →
+                </Link>
+              )}
             </div>
           </Card>
         ))}

@@ -79,6 +79,7 @@ export async function POST(request: Request) {
       threshold,
       maxAmountMicros,
       memberIds: body.memberIds ?? [],
+      proposedById: member.id,
     });
 
     await db.auditEvent.create({
