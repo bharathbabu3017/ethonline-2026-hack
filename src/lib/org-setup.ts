@@ -3,6 +3,7 @@ import type { PolicyCreateParams } from '@privy-io/node/resources';
 import { activeChain } from './chain';
 import { toPolicyHex } from './money';
 import { db } from './db';
+import { createApprovalGroup, displayName } from './approval-groups';
 
 /**
  * Creating an organization wires up six Privy objects in a fixed order. Each
@@ -54,7 +55,7 @@ const isApprover = (role: MemberInput['role']) => role === 'ADMIN' || role === '
 function buildCappedPolicy(orgName: string, thresholdMicros: bigint): PolicyCreateParams {
   return {
     version: '1.0' as const,
-    name: `${orgName} — under threshold`,
+    name: displayName(orgName, 'under threshold'),
     chain_type: 'ethereum' as const,
     rules: [
       {
@@ -132,14 +133,14 @@ export async function createOrganization(input: CreateOrgInput) {
   const approverQuorum = await privyApi.keyQuorums.create({
     user_ids: approverIds,
     authorization_threshold: 2,
-    display_name: `${name} — Approvers`,
+    display_name: displayName(name, 'Approvers'),
   });
 
   // 3. Members quorum — one signature, scoped by the capped policy below.
   const memberQuorum = await privyApi.keyQuorums.create({
     user_ids: allIds,
     authorization_threshold: 1,
-    display_name: `${name} — Members`,
+    display_name: displayName(name, 'Members'),
   });
 
   // 4. The cap that makes a single signature safe.
@@ -195,6 +196,31 @@ export async function createOrganization(input: CreateOrgInput) {
       },
     },
     include: { members: true },
+  });
+
+  // Two starting rules, matching the threshold the org was set up with. Both are
+  // ordinary groups, so an admin can edit them or add more (Grants, Engineering,
+  // Contractors) without anything being special-cased.
+  const approverMemberIds = org.members.filter((m) => m.role !== 'MEMBER').map((m) => m.id);
+  const allMemberIds = org.members.map((m) => m.id);
+
+  await createApprovalGroup({
+    orgId: org.id,
+    name: 'Standard payments',
+    description: `Any team member can release up to ${thresholdMicros / 1_000_000n} USDC on their own signature.`,
+    threshold: 1,
+    maxAmountMicros: thresholdMicros,
+    memberIds: allMemberIds,
+    isDefault: true,
+  });
+
+  await createApprovalGroup({
+    orgId: org.id,
+    name: 'Large payments',
+    description: 'Anything above the standard limit needs two approvers.',
+    threshold: 2,
+    maxAmountMicros: null,
+    memberIds: approverMemberIds,
   });
 
   return org;

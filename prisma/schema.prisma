@@ -33,8 +33,56 @@ model Org {
 
   members   Member[]
   requests  PaymentRequest[]
+  groups    ApprovalGroup[]
   events    AuditEvent[]
   createdAt DateTime @default(now())
+}
+
+/// A named approval rule: who may approve, and how many of them are needed.
+///
+/// Each group is backed by its own Privy key quorum and its own policy, attached
+/// to the treasury wallet as an additional signer. Privy evaluates only the
+/// policy of the signer that authorizes a transaction, so different groups can
+/// carry genuinely different spending limits on one shared wallet.
+model ApprovalGroup {
+  id    String @id @default(cuid())
+  orgId String
+  org   Org    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  name        String // "Grants", "Engineering", "Standard payments"
+  description String?
+
+  privyQuorumId String // key quorum holding this group's approvers
+  privyPolicyId String? // spending cap applied when this group authorizes
+  attachedToWallet Boolean @default(false) // whether Privy has it as a signer
+
+  /// Signatures required before a payment assigned to this group may settle.
+  threshold Int @default(1)
+
+  /// Largest payment this group may release, in micro-USDC. Null means no cap.
+  maxAmountMicros BigInt?
+
+  /// Used when a payment does not name a group, and as the fallback that must
+  /// always exist so an org can never be left unable to pay.
+  isDefault Boolean @default(false)
+
+  members  ApprovalGroupMember[]
+  requests PaymentRequest[]
+
+  createdAt DateTime @default(now())
+
+  @@unique([orgId, name])
+  @@index([orgId])
+}
+
+model ApprovalGroupMember {
+  groupId  String
+  group    ApprovalGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  memberId String
+  member   Member        @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, memberId])
+  @@index([memberId])
 }
 
 model Member {
@@ -59,9 +107,10 @@ model Member {
   authPublicKey  String?
   authPrivateKey String?
 
-  requested PaymentRequest[] @relation("Requester")
-  paidTo    PaymentRequest[] @relation("PayeeMember")
+  requested PaymentRequest[]     @relation("Requester")
+  paidTo    PaymentRequest[]     @relation("PayeeMember")
   approvals Approval[]
+  groups    ApprovalGroupMember[]
   createdAt DateTime         @default(now())
 
   @@unique([orgId, email])
@@ -85,7 +134,12 @@ model PaymentRequest {
   amountMicros BigInt
   memo         String
 
-  route         String  @default("AUTO") // AUTO | QUORUM, decided at submit
+  route         String  @default("AUTO") // AUTO | QUORUM, kept for older rows
+
+  /// The approval rule this payment must satisfy. Null for payments created
+  /// before groups existed, which fall back to the org threshold.
+  groupId       String?
+  group         ApprovalGroup? @relation(fields: [groupId], references: [id])
   privyIntentId String? @unique // unused; retained to avoid a destructive migration
   // The exact transaction every approver signs, fixed at submit time so each
   // signature covers identical bytes. Submitted to Privy with the collected

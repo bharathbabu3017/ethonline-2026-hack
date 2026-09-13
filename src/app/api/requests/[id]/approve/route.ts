@@ -18,7 +18,7 @@ export async function POST(
 
     const payment = await db.paymentRequest.findFirst({
       where: { id, orgId: org.id },
-      include: { approvals: true },
+      include: { approvals: true, group: { include: { members: true } } },
     });
     if (!payment) return Response.json({ error: 'Payment not found' }, { status: 404 });
 
@@ -30,6 +30,13 @@ export async function POST(
     }
     if (payment.approvals.some((a) => a.memberId === member.id)) {
       return Response.json({ error: 'You have already approved this payment' }, { status: 409 });
+    }
+    // Only the named group may release this payment.
+    if (payment.group && !payment.group.members.some((m) => m.memberId === member.id)) {
+      return Response.json(
+        { error: `Only members of "${payment.group.name}" can approve this payment` },
+        { status: 403 },
+      );
     }
     // The approver's browser signs the payment; we only store the result.
     const { signature } = (await request.json().catch(() => ({}))) as { signature?: string };
@@ -54,7 +61,7 @@ export async function POST(
     });
 
     const approved = payment.approvals.filter((a) => a.kind === 'AUTHORIZED').length + 1;
-    const required = approvalsRequired(payment.route);
+    const required = approvalsRequired(payment);
 
     if (approved < required) {
       return Response.json({ status: 'PENDING', approved, required });

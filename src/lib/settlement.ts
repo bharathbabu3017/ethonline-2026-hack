@@ -19,8 +19,16 @@ import { db } from './db';
 
 export class NotEnoughApprovals extends Error {}
 
-/** How many approvals a payment needs before money may move. */
-export const approvalsRequired = (route: string) => (route === 'QUORUM' ? 2 : 1);
+/**
+ * How many approvals a payment needs before money may move.
+ *
+ * Taken from the approval group it was assigned to. Payments created before
+ * groups existed fall back to the old two-tier routing.
+ */
+export const approvalsRequired = (payment: {
+  route: string;
+  group?: { threshold: number } | null;
+}) => payment.group?.threshold ?? (payment.route === 'QUORUM' ? 2 : 1);
 
 interface RpcResult {
   hash?: string;
@@ -37,13 +45,13 @@ interface RpcResult {
 export async function settlePayment(paymentId: string) {
   const payment = await db.paymentRequest.findUnique({
     where: { id: paymentId },
-    include: { org: true, approvals: true },
+    include: { org: true, approvals: true, group: true },
   });
   if (!payment) throw new Error('Payment not found');
   if (payment.status === 'EXECUTED') return payment;
 
   const approved = payment.approvals.filter((a) => a.kind === 'AUTHORIZED').length;
-  const required = approvalsRequired(payment.route);
+  const required = approvalsRequired(payment);
   if (approved < required) {
     throw new NotEnoughApprovals(
       `This payment needs ${required} approvals and has ${approved}`,

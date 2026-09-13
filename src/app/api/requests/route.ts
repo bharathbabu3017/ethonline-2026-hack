@@ -5,6 +5,7 @@ import { storeInvoice, InvalidUploadError } from '@/lib/invoices';
 import { normalizeAddress, transferCalldata } from '@/lib/payments';
 import { activeChain } from '@/lib/chain';
 import { approvalsRequired } from '@/lib/settlement';
+import { suggestGroup } from '@/lib/approval-groups';
 
 /** Payment history for the caller's org, newest first. */
 export async function GET(request: Request) {
@@ -17,6 +18,7 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
       include: {
         requester: { select: { name: true, email: true } },
+        group: { include: { members: { select: { memberId: true } } } },
         invoices: { select: { id: true, filename: true } },
         approvals: {
           include: { member: { select: { id: true, name: true } } },
@@ -45,7 +47,13 @@ export async function GET(request: Request) {
           kind: a.kind,
           at: a.createdAt.toISOString(),
         })),
-        approvalsRequired: approvalsRequired(r.route),
+        approvalsRequired: approvalsRequired(r),
+        group: r.group
+          ? { id: r.group.id, name: r.group.name, threshold: r.group.threshold }
+          : null,
+        youCanApprove: r.group
+          ? r.group.members.some((m) => m.memberId === member.id)
+          : true,
         youApproved: r.approvals.some((a) => a.memberId === member.id),
       })),
       explorerBase: activeChain.explorerTxUrl(''),
@@ -111,6 +119,24 @@ export async function POST(request: Request) {
       }
     }
 
+    // Which approval rule governs this payment. An explicit choice wins;
+    // otherwise take the cheapest rule that still permits the amount.
+    let group = null;
+    const requestedGroupId = String(form.get('groupId') ?? '').trim();
+    if (requestedGroupId) {
+      group = await db.approvalGroup.findFirst({
+        where: { id: requestedGroupId, orgId: org.id },
+      });
+      if (!group) return bad('That approval group does not exist');
+      if (group.maxAmountMicros !== null && amountMicros > group.maxAmountMicros) {
+        return bad(
+          `"${group.name}" can release at most ${group.maxAmountMicros / 1_000_000n} USDC`,
+        );
+      }
+    } else {
+      group = await suggestGroup(org.id, amountMicros);
+    }
+
     const route = amountMicros <= org.thresholdMicros ? 'AUTO' : 'QUORUM';
 
     // The exact transaction that will be submitted once approved. Stored so
@@ -132,6 +158,7 @@ export async function POST(request: Request) {
         amountMicros,
         memo,
         route,
+        groupId: group?.id ?? null,
         requestBody: JSON.stringify(transaction),
         status: 'PENDING',
         invoices: stored
@@ -147,6 +174,7 @@ export async function POST(request: Request) {
               payeeLabel,
               payeeAddress,
               route,
+              group: group?.name ?? null,
               invoice: stored?.filename ?? null,
             }),
           },
@@ -154,7 +182,17 @@ export async function POST(request: Request) {
       },
     });
 
-    return Response.json({ id: created.id, route, status: 'PENDING' }, { status: 201 });
+    return Response.json(
+      {
+        id: created.id,
+        route,
+        status: 'PENDING',
+        group: group ? { name: group.name, threshold: group.threshold } : null,
+        // One approval means the requester's own signature finishes it.
+        settlesImmediately: (group?.threshold ?? (route === 'QUORUM' ? 2 : 1)) === 1,
+      },
+      { status: 201 },
+    );
   } catch (error) {
     return sessionErrorResponse(error, '[api/requests POST]') ?? serverError(error);
   }

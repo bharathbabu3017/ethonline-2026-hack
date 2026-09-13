@@ -7,11 +7,14 @@ import { useApi } from '@/lib/use-api';
 import { useApprovePayment } from '@/lib/use-approve';
 import { formatUsdc } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
+import type { ApprovalGroup } from '../../groups/page';
 import { Button, Card, ErrorNote, Field, inputClass } from '@/components/ui';
 
 export default function NewPayment() {
   const router = useRouter();
   const { data: orgData } = useApi<OrgResponse>('/api/org');
+  const { data: groupData } = useApi<{ groups: ApprovalGroup[] }>('/api/groups');
+  const [groupId, setGroupId] = useState('');
   const approvePayment = useApprovePayment();
   const [payeeType, setPayeeType] = useState<'ADDRESS' | 'MEMBER'>('ADDRESS');
   const [amount, setAmount] = useState('');
@@ -22,11 +25,24 @@ export default function NewPayment() {
   const org = orgData?.org;
   const threshold = org ? BigInt(org.thresholdMicros) : null;
 
-  // Show which path this payment will take before it is submitted, so nobody is
-  // surprised that it needs a second approver.
   const amountMicros = parseAmount(amount);
-  const needsQuorum =
-    threshold !== null && amountMicros !== null && amountMicros > threshold;
+  const groups = groupData?.groups ?? [];
+
+  // Which rule will govern this payment: the explicit choice, or the cheapest
+  // group that permits the amount. Shown before submitting so nobody is
+  // surprised that it needs a second approver.
+  const chosen = groups.find((g) => g.id === groupId) ?? null;
+  const suggested =
+    amountMicros === null
+      ? null
+      : [...groups]
+          .filter((g) => g.maxAmountMicros === null || amountMicros <= BigInt(g.maxAmountMicros))
+          .sort((a, b) => a.threshold - b.threshold)[0] ?? null;
+  const effective = chosen ?? suggested;
+  const overGroupLimit =
+    chosen?.maxAmountMicros != null &&
+    amountMicros !== null &&
+    amountMicros > BigInt(chosen.maxAmountMicros);
 
   // Members can only be paid once they have signed in and been given a wallet.
   const payableMembers = (org?.members ?? []).filter((m) => !m.isYou);
@@ -49,7 +65,7 @@ export default function NewPayment() {
       // Under the threshold the requester's own signature is enough, so sign
       // it now and the payment settles as part of submitting. It is a real
       // signature from their key — nothing here bypasses Privy.
-      if (body.route === 'AUTO') {
+      if (body.settlesImmediately) {
         try {
           await approvePayment(body.id);
         } catch (signError) {
@@ -144,23 +160,53 @@ export default function NewPayment() {
               />
             </Field>
 
-            {threshold !== null && amountMicros !== null && (
+            <Field
+              label="Approval group"
+              hint="Leave on automatic to use the cheapest rule that allows this amount."
+            >
+              <select
+                name="groupId"
+                value={groupId}
+                onChange={(e) => setGroupId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Automatic</option>
+                {groups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name} — {g.threshold} approval{g.threshold === 1 ? '' : 's'}
+                    {g.maxAmountMicros
+                      ? `, up to ${formatUsdc(BigInt(g.maxAmountMicros))} USDC`
+                      : ''}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            {overGroupLimit && chosen?.maxAmountMicros && (
+              <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-800">
+                {chosen.name} can release at most{' '}
+                {formatUsdc(BigInt(chosen.maxAmountMicros))} USDC. Pick another group or
+                lower the amount.
+              </div>
+            )}
+
+            {!overGroupLimit && effective && amountMicros !== null && (
               <div
                 className={`rounded-lg px-3 py-2.5 text-sm ${
-                  needsQuorum
+                  effective.threshold > 1
                     ? 'bg-amber-50 text-amber-900'
                     : 'bg-emerald-50 text-emerald-900'
                 }`}
               >
-                {needsQuorum ? (
+                {effective.threshold > 1 ? (
                   <>
-                    Above the {formatUsdc(threshold)} USDC limit — a second approver must
-                    sign before this can be paid.
+                    <strong>{effective.name}</strong> — needs {effective.threshold} approvals
+                    from {effective.members.map((m) => m.name).join(', ')}.
                   </>
                 ) : (
                   <>
-                    Within the {formatUsdc(threshold)} USDC limit — your signature alone
-                    releases this payment.
+                    <strong>{effective.name}</strong> — your signature alone releases this
+                    payment.
                   </>
                 )}
               </div>
