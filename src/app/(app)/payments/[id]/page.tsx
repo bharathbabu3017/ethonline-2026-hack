@@ -6,11 +6,13 @@ import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
 import { Badge, Card, ErrorNote, Mono, Skeleton } from '@/components/ui';
 import { InvoiceLink } from '@/components/invoice-link';
+import { ApproveActions } from '@/components/approve-actions';
 import { STATUS_LABEL, STATUS_TONE, type PaymentRow } from '../page';
+import { activeChain } from '@/lib/chain';
 
 export default function PaymentDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, loading } = useApi<{ requests: PaymentRow[] }>('/api/requests');
+  const { data, error, loading, reload } = useApi<{ requests: PaymentRow[] }>('/api/requests');
 
   if (loading) return <Skeleton className="h-80" />;
   if (error) return <ErrorNote>{error}</ErrorNote>;
@@ -65,6 +67,16 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
             </li>
           ))}
         </ul>
+
+        {payment.status === 'PENDING' && (
+          <div className="mt-5 border-t border-neutral-100 pt-4">
+            <ApproveActions
+              paymentId={payment.id}
+              alreadyApproved={payment.youApproved}
+              onDone={reload}
+            />
+          </div>
+        )}
       </Card>
 
       <Card title="Details">
@@ -73,7 +85,21 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
           <Row label="Address" value={<Mono>{payment.payeeAddress}</Mono>} />
           <Row label="Requested by" value={payment.requester.name} />
           <Row label="Submitted" value={new Date(payment.createdAt).toLocaleString()} />
-          {payment.txHash && <Row label="Transaction" value={<Mono>{payment.txHash}</Mono>} />}
+          {payment.txHash && (
+            <Row
+              label="Transaction"
+              value={
+                <a
+                  href={activeChain.explorerTxUrl(payment.txHash)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-mono text-xs text-indigo-600 hover:underline"
+                >
+                  {payment.txHash.slice(0, 14)}…{payment.txHash.slice(-8)} ↗
+                </a>
+              }
+            />
+          )}
         </dl>
       </Card>
 

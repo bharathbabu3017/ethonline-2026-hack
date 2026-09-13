@@ -65,7 +65,7 @@ export const privyApi = (
  */
 export async function privyApiRaw<T = unknown>(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<T> {
   const appId = required('PRIVY_APP_ID');
   const credentials = Buffer.from(`${appId}:${required('PRIVY_APP_SECRET')}`).toString('base64');
@@ -76,6 +76,7 @@ export async function privyApiRaw<T = unknown>(
       Authorization: `Basic ${credentials}`,
       'privy-app-id': appId,
       'Content-Type': 'application/json',
+      ...init?.headers,
     },
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
@@ -100,10 +101,16 @@ export class UnauthenticatedError extends Error {
  * Every API route calls this before doing anything. The token comes from
  * `getAccessToken()` on the client, sent as a bearer token.
  */
-export async function requirePrivyUser(request: Request): Promise<string> {
+/** The caller's raw access token, needed when they must sign something. */
+export function bearerToken(request: Request): string {
   const header = request.headers.get('authorization');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) throw new UnauthenticatedError('Missing bearer token');
+  return token;
+}
+
+export async function requirePrivyUser(request: Request): Promise<string> {
+  const token = bearerToken(request);
 
   try {
     const claims = await privy.utils().auth().verifyAccessToken(token);

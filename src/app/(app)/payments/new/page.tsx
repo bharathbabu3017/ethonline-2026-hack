@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getAccessToken } from '@privy-io/react-auth';
 import { useApi } from '@/lib/use-api';
+import { useApprovePayment } from '@/lib/use-approve';
 import { formatUsdc } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
 import { Button, Card, ErrorNote, Field, inputClass } from '@/components/ui';
@@ -11,6 +12,7 @@ import { Button, Card, ErrorNote, Field, inputClass } from '@/components/ui';
 export default function NewPayment() {
   const router = useRouter();
   const { data: orgData } = useApi<OrgResponse>('/api/org');
+  const approvePayment = useApprovePayment();
   const [payeeType, setPayeeType] = useState<'ADDRESS' | 'MEMBER'>('ADDRESS');
   const [amount, setAmount] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -43,6 +45,23 @@ export default function NewPayment() {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error ?? `Request failed (${response.status})`);
+
+      // Under the threshold the requester's own signature is enough, so sign
+      // it now and the payment settles as part of submitting. It is a real
+      // signature from their key — nothing here bypasses Privy.
+      if (body.route === 'AUTO') {
+        try {
+          await approvePayment(body.id);
+        } catch (signError) {
+          setError(
+            `Payment saved, but signing it failed: ${
+              signError instanceof Error ? signError.message : String(signError)
+            }`,
+          );
+          setBusy(false);
+          return;
+        }
+      }
       router.push(`/payments/${body.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

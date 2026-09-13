@@ -126,15 +126,16 @@ export async function createOrganization(input: CreateOrgInput) {
     );
   }
 
-  // 2. Approvers quorum — 2 signatures. Becomes the wallet's owner, and can
-  //    authorize anything including wallet configuration changes.
+  // 2. Approvers quorum — owns the treasury. Two signatures required, so a
+  //    large payment always involves two people. Members sign for themselves
+  //    from their browsers; no signing key is held by PayGate.
   const approverQuorum = await privyApi.keyQuorums.create({
     user_ids: approverIds,
     authorization_threshold: 2,
     display_name: `${name} — Approvers`,
   });
 
-  // 3. Members quorum — 1 signature, but scoped by the policy below.
+  // 3. Members quorum — one signature, scoped by the capped policy below.
   const memberQuorum = await privyApi.keyQuorums.create({
     user_ids: allIds,
     authorization_threshold: 1,

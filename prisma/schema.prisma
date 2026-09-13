@@ -48,6 +48,17 @@ model Member {
   walletAddress String? // personal embedded wallet, used when paying a member
   role          String // ADMIN | APPROVER | MEMBER
 
+  // P-256 authorization keypair registered in this org's key quorums.
+  //
+  // DEMO-GRADE: Privy cannot currently issue user signing keys for this app
+  // (POST /v1/wallets/authenticate rejects valid access tokens), so approvals
+  // are signed with platform-held keys instead of keys held by each approver.
+  // Privy still enforces the quorum threshold and the spending policy, but a
+  // compromised backend could forge an approval — which browser-held user keys
+  // would prevent. Swap back to user signers when Privy enables them.
+  authPublicKey  String?
+  authPrivateKey String?
+
   requested PaymentRequest[] @relation("Requester")
   paidTo    PaymentRequest[] @relation("PayeeMember")
   approvals Approval[]
@@ -75,7 +86,13 @@ model PaymentRequest {
   memo         String
 
   route         String  @default("AUTO") // AUTO | QUORUM, decided at submit
-  privyIntentId String  @unique
+  privyIntentId String? @unique // kept as an audit record; not the execution path
+
+  // The exact request every approver signs, canonicalized once at submit so
+  // each signature covers identical bytes. Sent to Privy with the collected
+  // signatures once the threshold is met. Optional only so payments created
+  // before this path existed still load.
+  requestBody   String?
   status        String  @default("PENDING") // PENDING PROCESSING EXECUTED FAILED REJECTED EXPIRED
   txHash        String?
   failureReason String?
@@ -112,6 +129,9 @@ model Approval {
   member    Member         @relation(fields: [memberId], references: [id])
 
   kind      String // AUTHORIZED | REJECTED
+  // The approver's authorization signature over the payment's requestBody.
+  // Held until enough are collected, then submitted to Privy together.
+  signature String?
   createdAt DateTime @default(now())
 
   // One vote per member per request. Privy is idempotent per signer anyway;

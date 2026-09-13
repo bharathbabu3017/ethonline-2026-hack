@@ -1,4 +1,4 @@
-import { privyApiRaw, requirePrivyUser, UnauthenticatedError } from './privy-server';
+import { bearerToken, privyApiRaw, requirePrivyUser, UnauthenticatedError } from './privy-server';
 import { db } from './db';
 
 export class NoOrgError extends Error {
@@ -32,7 +32,8 @@ export async function requireMember(request: Request) {
     }
   }
 
-  return { member, org: member.org, privyUserId };
+  // The token comes back too: approving an intent means signing as this user.
+  return { member, org: member.org, privyUserId, token: bearerToken(request) };
 }
 
 async function embeddedWalletAddress(privyUserId: string): Promise<string | null> {

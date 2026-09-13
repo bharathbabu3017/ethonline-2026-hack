@@ -2,13 +2,15 @@ import { requireMember, sessionErrorResponse } from '@/lib/session';
 import { db } from '@/lib/db';
 import { toMicros } from '@/lib/money';
 import { storeInvoice, InvalidUploadError } from '@/lib/invoices';
-import { createPaymentIntent, normalizeAddress } from '@/lib/payments';
+import { normalizeAddress, transferCalldata } from '@/lib/payments';
 import { activeChain } from '@/lib/chain';
+import { approvalsRequired } from '@/lib/settlement';
 
 /** Payment history for the caller's org, newest first. */
 export async function GET(request: Request) {
   try {
     const { org, member } = await requireMember(request);
+
 
     const requests = await db.paymentRequest.findMany({
       where: { orgId: org.id },
@@ -43,8 +45,7 @@ export async function GET(request: Request) {
           kind: a.kind,
           at: a.createdAt.toISOString(),
         })),
-        // Over-threshold payments need two approvers; small ones need one signature.
-        approvalsRequired: r.route === 'QUORUM' ? 2 : 1,
+        approvalsRequired: approvalsRequired(r.route),
         youApproved: r.approvals.some((a) => a.memberId === member.id),
       })),
       explorerBase: activeChain.explorerTxUrl(''),
@@ -112,16 +113,13 @@ export async function POST(request: Request) {
 
     const route = amountMicros <= org.thresholdMicros ? 'AUTO' : 'QUORUM';
 
-    const intent = await createPaymentIntent({
-      walletId: org.privyWalletId,
-      treasuryAddress: org.walletAddress as `0x${string}`,
-      payeeAddress,
-      amountMicros,
-    });
-
-    const intentId = (intent as { intent_id?: string; id?: string }).intent_id
-      ?? (intent as { id?: string }).id;
-    if (!intentId) throw new Error('Privy did not return an intent ID');
+    // The exact transaction that will be submitted once approved. Stored so
+    // what gets executed is fixed at submit time and cannot drift afterwards.
+    const transaction = {
+      to: activeChain.usdcAddress,
+      data: transferCalldata(payeeAddress, amountMicros),
+      value: '0x0',
+    };
 
     const created = await db.paymentRequest.create({
       data: {
@@ -134,7 +132,7 @@ export async function POST(request: Request) {
         amountMicros,
         memo,
         route,
-        privyIntentId: intentId,
+        requestBody: JSON.stringify(transaction),
         status: 'PENDING',
         invoices: stored
           ? { create: { ...stored, uploadedById: member.id } }
@@ -149,7 +147,6 @@ export async function POST(request: Request) {
               payeeLabel,
               payeeAddress,
               route,
-              intentId,
               invoice: stored?.filename ?? null,
             }),
           },
@@ -157,7 +154,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return Response.json({ id: created.id, route, intentId }, { status: 201 });
+    return Response.json({ id: created.id, route, status: 'PENDING' }, { status: 201 });
   } catch (error) {
     return sessionErrorResponse(error, '[api/requests POST]') ?? serverError(error);
   }
