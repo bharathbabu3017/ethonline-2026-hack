@@ -1,9 +1,10 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo, useState } from 'react';
 import { useApi } from '@/lib/use-api';
 import { formatUsdc } from '@/lib/money';
-import { Badge, Button, Card, ErrorNote, Skeleton } from '@/components/ui';
+import { Badge, Button, Card, ErrorNote, Skeleton, inputClass } from '@/components/ui';
 
 export interface PaymentRow {
   id: string;
@@ -41,8 +42,31 @@ export const STATUS_LABEL: Record<string, string> = {
   EXPIRED: 'Expired',
 };
 
+const FILTERS = ['All', 'Awaiting approval', 'Paid', 'Failed'] as const;
+
+const MATCHES: Record<(typeof FILTERS)[number], (r: PaymentRow) => boolean> = {
+  All: () => true,
+  'Awaiting approval': (r) => r.status === 'PENDING',
+  Paid: (r) => r.status === 'EXECUTED',
+  Failed: (r) => r.status === 'FAILED' || r.status === 'REJECTED' || r.status === 'EXPIRED',
+};
+
 export default function Payments() {
   const { data, error, loading } = useApi<{ requests: PaymentRow[] }>('/api/requests');
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
+  const [query, setQuery] = useState('');
+
+  const rows = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return (data?.requests ?? []).filter((r) => {
+      if (!MATCHES[filter](r)) return false;
+      if (!needle) return true;
+      return [r.payeeLabel, r.memo, r.requester.name, r.payeeAddress]
+        .join(' ')
+        .toLowerCase()
+        .includes(needle);
+    });
+  }, [data, filter, query]);
 
   return (
     <div className="space-y-6">
@@ -77,6 +101,46 @@ export default function Payments() {
       )}
 
       {data && data.requests.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="inline-flex rounded-lg border border-neutral-200 bg-white p-0.5">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-md px-3 py-1.5 text-sm transition ${
+                  filter === f
+                    ? 'bg-neutral-900 text-white'
+                    : 'text-neutral-600 hover:bg-neutral-50'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search payee, description, requester…"
+            className={`${inputClass} max-w-xs`}
+          />
+          <span className="text-xs text-neutral-500">
+            {rows.length} of {data.requests.length}
+          </span>
+          <Button variant="secondary" onClick={() => exportCsv(rows)} disabled={!rows.length}>
+            Export CSV
+          </Button>
+        </div>
+      )}
+
+      {data && data.requests.length > 0 && rows.length === 0 && (
+        <Card>
+          <p className="py-8 text-center text-sm text-neutral-600">
+            No payments match that filter.
+          </p>
+        </Card>
+      )}
+
+      {rows.length > 0 && (
         <Card className="overflow-hidden">
           <div className="-m-5 overflow-x-auto">
             <table className="w-full min-w-[720px] text-sm">
@@ -90,7 +154,7 @@ export default function Payments() {
                 </tr>
               </thead>
               <tbody>
-                {data.requests.map((r) => (
+                {rows.map((r) => (
                   <tr key={r.id} className="border-b border-neutral-50 last:border-0">
                     <td className="px-5 py-3">
                       <Link href={`/payments/${r.id}`} className="hover:underline">
@@ -130,4 +194,41 @@ export default function Payments() {
       )}
     </div>
   );
+}
+
+/** Download the visible rows as CSV — what a finance team will actually want. */
+function exportCsv(rows: PaymentRow[]) {
+  const header = [
+    'Date', 'Payee', 'Address', 'Amount USDC', 'Description',
+    'Status', 'Route', 'Approvals', 'Requested by', 'Transaction',
+  ];
+  const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
+  const body = rows.map((r) =>
+    [
+      new Date(r.createdAt).toISOString(),
+      r.payeeLabel,
+      r.payeeAddress,
+      formatUsdc(BigInt(r.amountMicros)).replace(/,/g, ''),
+      r.memo,
+      STATUS_LABEL[r.status] ?? r.status,
+      r.route,
+      r.approvals
+        .filter((a) => a.kind === 'AUTHORIZED')
+        .map((a) => a.name)
+        .join('; '),
+      r.requester.name,
+      r.txHash ?? '',
+    ]
+      .map((v) => escape(String(v)))
+      .join(','),
+  );
+
+  const url = URL.createObjectURL(
+    new Blob([[header.join(','), ...body].join('\n')], { type: 'text/csv' }),
+  );
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `paygate-payments-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
