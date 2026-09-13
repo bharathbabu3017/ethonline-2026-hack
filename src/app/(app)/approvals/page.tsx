@@ -46,11 +46,14 @@ export default function Approvals() {
             <Card key={r.id}>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/payments/${r.id}`} className="font-medium hover:underline">
                       {formatUsdc(BigInt(r.amountMicros))} USDC
                     </Link>
-                    {r.route === 'QUORUM' && <Badge tone="amber">needs 2 approvers</Badge>}
+                    {r.group && <Badge tone="neutral">{r.group.name}</Badge>}
+                    {r.approvalsRequired > 1 && (
+                      <Badge tone="amber">needs {r.approvalsRequired} approvers</Badge>
+                    )}
                   </div>
                   <p className="mt-1 text-sm text-neutral-600">
                     to {r.payeeLabel} · {r.memo}
@@ -64,6 +67,9 @@ export default function Approvals() {
                 <ApproveActions
                   paymentId={r.id}
                   alreadyApproved={r.youApproved}
+                  canApprove={r.youCanApprove}
+                  isRequester={r.isRequester}
+                  groupName={r.group?.name}
                   onDone={reload}
                 />
               </div>

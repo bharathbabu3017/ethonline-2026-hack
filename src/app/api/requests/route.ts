@@ -54,6 +54,7 @@ export async function GET(request: Request) {
         youCanApprove: r.group
           ? r.group.members.some((m) => m.memberId === member.id)
           : true,
+        isRequester: r.requesterId === member.id,
         youApproved: r.approvals.some((a) => a.memberId === member.id),
       })),
       explorerBase: activeChain.explorerTxUrl(''),

@@ -22,6 +22,9 @@ export interface PaymentRow {
   approvals: { memberId: string; name: string; kind: string; at: string }[];
   approvalsRequired: number;
   youApproved: boolean;
+  youCanApprove: boolean;
+  isRequester: boolean;
+  group: { id: string; name: string; threshold: number } | null;
 }
 
 export const STATUS_TONE: Record<string, 'green' | 'amber' | 'red' | 'neutral' | 'indigo'> = {
@@ -181,8 +184,8 @@ export default function Payments() {
                     <td className="px-5 py-3 text-neutral-600">
                       {r.approvals.filter((a) => a.kind === 'AUTHORIZED').length} of{' '}
                       {r.approvalsRequired}
-                      {r.route === 'QUORUM' && (
-                        <span className="ml-2 text-xs text-neutral-400">quorum</span>
+                      {r.group && (
+                        <span className="ml-2 text-xs text-neutral-400">{r.group.name}</span>
                       )}
                     </td>
                   </tr>

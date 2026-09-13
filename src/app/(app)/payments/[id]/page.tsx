@@ -47,9 +47,18 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
 
       <Card title="Approval">
         <p className="-mt-1 text-sm text-neutral-600">
-          {payment.route === 'QUORUM'
-            ? 'Above the limit, so Privy requires two approvers before it will sign.'
-            : 'Within the limit, so a single signature releases it.'}
+          {payment.group ? (
+            <>
+              Governed by <strong>{payment.group.name}</strong> —{' '}
+              {payment.approvalsRequired === 1
+                ? 'one signature from that group releases it.'
+                : `${payment.approvalsRequired} signatures from that group are required.`}
+            </>
+          ) : payment.approvalsRequired > 1 ? (
+            'Two approvers are required before this can be released.'
+          ) : (
+            'A single signature releases this payment.'
+          )}
         </p>
         <p className="mt-3 text-sm font-medium">
           {approvals.length} of {payment.approvalsRequired} signatures collected
@@ -73,6 +82,9 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
             <ApproveActions
               paymentId={payment.id}
               alreadyApproved={payment.youApproved}
+              canApprove={payment.youCanApprove}
+              isRequester={payment.isRequester}
+              groupName={payment.group?.name}
               onDone={reload}
             />
           </div>
