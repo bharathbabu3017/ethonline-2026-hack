@@ -1,17 +1,15 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 
 /**
  * Invoice storage.
  *
- * Files land under uploads/<orgId>/, named by a generated UUID. The user's
- * original filename is kept in the database for display but never touches the
- * filesystem — that is what stops a name like "../../.env" escaping the
- * directory. Files are served through an authenticated route, never statically.
+ * Files are held in the database, not on disk: the app runs on ephemeral
+ * serverless filesystems where anything written locally disappears on the next
+ * cold start. The user's original filename is kept for display only and never
+ * used as a path, and files are served through an authenticated route rather
+ * than statically.
  */
 
-const UPLOAD_ROOT = path.join(process.cwd(), 'uploads');
 const MAX_BYTES = 10 * 1024 * 1024;
 
 /** Extension is derived from the sniffed type, not from what the client claimed. */
@@ -39,12 +37,17 @@ function sniff(buffer: Buffer): string | null {
 
 export interface StoredInvoice {
   filename: string;
-  storagePath: string;
+  /**
+   * Prisma's Bytes is `ReturnType<Uint8Array['slice']>` — a Uint8Array backed by
+   * a plain ArrayBuffer. A Buffer's view is wider than that, so slice() here
+   * both narrows the type and detaches the bytes from Node's pooled memory.
+   */
+  data: ReturnType<Uint8Array['slice']>;
   mimeType: string;
   sizeBytes: number;
 }
 
-export async function storeInvoice(file: File, orgId: string): Promise<StoredInvoice> {
+export async function storeInvoice(file: File): Promise<StoredInvoice> {
   if (file.size === 0) throw new InvalidUploadError('The invoice file is empty');
   if (file.size > MAX_BYTES) {
     throw new InvalidUploadError('Invoices must be 10MB or smaller');
@@ -59,29 +62,12 @@ export async function storeInvoice(file: File, orgId: string): Promise<StoredInv
     throw new InvalidUploadError('Invoices must be a PDF, PNG, or JPEG');
   }
 
-  const directory = path.join(UPLOAD_ROOT, orgId);
-  await mkdir(directory, { recursive: true });
-
-  const storedName = `${randomUUID()}${ACCEPTED[mimeType]}`;
-  await writeFile(path.join(directory, storedName), buffer);
-
   return {
-    // Display only. Stripped of any path components before it is stored.
+    // Display only. Stripped of any path components before it is stored, so a
+    // name like "../../.env" cannot be used as one.
     filename: path.basename(file.name || 'invoice').slice(0, 200),
-    storagePath: path.join(orgId, storedName),
+    data: new Uint8Array(buffer).slice(),
     mimeType,
     sizeBytes: buffer.byteLength,
   };
-}
-
-/**
- * Absolute path for a stored invoice, refusing anything that escapes the
- * upload root even if a bad value reached the database.
- */
-export function resolveInvoicePath(storagePath: string): string {
-  const resolved = path.resolve(UPLOAD_ROOT, storagePath);
-  if (resolved !== UPLOAD_ROOT && !resolved.startsWith(UPLOAD_ROOT + path.sep)) {
-    throw new InvalidUploadError('Invalid invoice path');
-  }
-  return resolved;
 }

@@ -118,7 +118,7 @@ export async function POST(request: Request) {
     let stored = null;
     if (file instanceof File && file.size > 0) {
       try {
-        stored = await storeInvoice(file, org.id);
+        stored = await storeInvoice(file);
       } catch (e) {
         if (e instanceof InvalidUploadError) return bad(e.message);
         throw e;

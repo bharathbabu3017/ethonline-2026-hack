@@ -1,7 +1,5 @@
-import { readFile } from 'node:fs/promises';
 import { requireMember, sessionErrorResponse } from '@/lib/session';
 import { db } from '@/lib/db';
-import { resolveInvoicePath } from '@/lib/invoices';
 
 /**
  * Serve an invoice to members of the org that owns it.
@@ -29,9 +27,7 @@ export async function GET(
       return Response.json({ error: 'Not found' }, { status: 404 });
     }
 
-    const file = await readFile(resolveInvoicePath(invoice.storagePath));
-
-    return new Response(new Uint8Array(file), {
+    return new Response(new Uint8Array(invoice.data), {
       headers: {
         'content-type': invoice.mimeType,
         // inline so PDFs preview in the browser; the filename is quoted and

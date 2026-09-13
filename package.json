@@ -9,7 +9,7 @@
     "spike:privy": "tsx scripts/spike/privy-org-primitives.ts",
     "typecheck": "tsc --noEmit",
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "start": "next start",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
@@ -17,7 +17,8 @@
     "dev:seed-payments": "tsx --env-file=.env.local scripts/dev/create-test-payments.ts",
     "dev:test-settlement": "tsx --env-file=.env.local scripts/dev/test-settlement.ts",
     "dev:verify": "tsx --env-file=.env.local scripts/dev/verify-end-to-end.ts",
-    "dev:backfill-groups": "tsx --env-file=.env.local scripts/dev/backfill-groups.ts"
+    "dev:backfill-groups": "tsx --env-file=.env.local scripts/dev/backfill-groups.ts",
+    "postinstall": "prisma generate"
   },
   "repository": {
     "type": "git",
@@ -34,11 +35,13 @@
   "private": "true",
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.10.0",
+    "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
     "@privy-io/node": "^0.34.0",
     "@privy-io/react-auth": "^3.40.0",
     "@stripe/stripe-js": "^9.15.0",
     "next": "^16.3.4",
+    "pg": "^8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "viem": "^2.56.3"
@@ -46,6 +49,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.5.0",
+    "@types/pg": "^8.23.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "prisma": "^7.10.0",

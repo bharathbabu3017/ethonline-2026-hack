@@ -37,3 +37,7 @@ npm-debug.log*
 
 # Phase 0 spike scratch state (wallet IDs from throwaway runs)
 .spike-state.json
+
+# Vercel
+.vercel
+.env*

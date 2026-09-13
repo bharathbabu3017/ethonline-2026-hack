@@ -11,7 +11,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 model Org {
@@ -226,9 +226,12 @@ model Invoice {
   requestId String
   request   PaymentRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  filename     String // original name, for display only
-  storagePath  String // generated name on disk; never user-controlled
-  mimeType     String
+  filename    String // original name, for display only
+  /// The file itself. Held in the database rather than on disk: the app runs on
+  /// ephemeral serverless filesystems, so anything written locally is lost.
+  data        Bytes
+  storagePath String? // legacy on-disk path, retained for old rows
+  mimeType    String
   sizeBytes    Int
   uploadedById String
   createdAt    DateTime @default(now())
