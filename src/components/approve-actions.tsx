@@ -30,15 +30,21 @@ export function ApproveActions({
   onDone: () => void;
 }) {
   const approvePayment = useApprovePayment();
-  const [busy, setBusy] = useState<null | 'approve' | 'reject'>(null);
+  const [busy, setBusy] = useState<null | 'approve' | 'reject' | 'withdraw'>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function act(kind: 'approve' | 'reject') {
+  async function act(kind: 'approve' | 'reject' | 'withdraw') {
     setError(null);
     setBusy(kind);
     try {
-      if (kind === 'approve') await approvePayment(paymentId);
-      else await apiFetch(`/api/requests/${paymentId}/reject`, { method: 'POST' });
+      if (kind === 'approve') {
+        await approvePayment(paymentId);
+      } else {
+        await apiFetch(`/api/requests/${paymentId}/reject`, {
+          method: 'POST',
+          body: { withdraw: kind === 'withdraw' },
+        });
+      }
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -46,6 +52,12 @@ export function ApproveActions({
       setBusy(null);
     }
   }
+
+  const withdrawButton = (
+    <Button variant="ghost" onClick={() => act('withdraw')} disabled={busy !== null}>
+      {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw request'}
+    </Button>
+  );
 
   // Nothing to offer: not in the group, and not theirs to withdraw.
   if (!canApprove && !isRequester) {
@@ -56,18 +68,14 @@ export function ApproveActions({
     );
   }
 
-  // Theirs, but someone else has to release it — so offer only a withdrawal.
+  // Theirs, but someone else has to release it — so only a withdrawal.
   if (!canApprove && isRequester) {
     return (
       <div className="space-y-3">
         <div className="flex items-center gap-3">
-          <Button variant="secondary" onClick={() => act('reject')} disabled={busy !== null}>
-            {busy === 'reject' ? 'Withdrawing…' : 'Withdraw request'}
-          </Button>
+          {withdrawButton}
           {groupName && (
-            <span className="text-sm text-neutral-500">
-              Awaiting “{groupName}”
-            </span>
+            <span className="text-sm text-neutral-500">Awaiting “{groupName}”</span>
           )}
         </div>
         {error && <ErrorNote>{error}</ErrorNote>}
@@ -75,23 +83,31 @@ export function ApproveActions({
     );
   }
 
+  // In the group and already signed — but still able to pull their own request.
   if (alreadyApproved) {
     return (
-      <p className="text-sm text-neutral-500">
-        You have approved this. Waiting on another approver.
-      </p>
+      <div className="space-y-3">
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-neutral-500">
+            You have approved this. Waiting on another approver.
+          </p>
+          {isRequester && withdrawButton}
+        </div>
+        {error && <ErrorNote>{error}</ErrorNote>}
+      </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button onClick={() => act('approve')} disabled={busy !== null}>
           {busy === 'approve' ? 'Signing…' : 'Approve'}
         </Button>
         <Button variant="secondary" onClick={() => act('reject')} disabled={busy !== null}>
           {busy === 'reject' ? 'Rejecting…' : 'Reject'}
         </Button>
+        {isRequester && withdrawButton}
       </div>
       {error && <ErrorNote>{error}</ErrorNote>}
     </div>

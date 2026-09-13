@@ -2,11 +2,15 @@ import { requireMember, sessionErrorResponse } from '@/lib/session';
 import { db } from '@/lib/db';
 
 /**
- * Reject a pending payment.
+ * Close a pending payment without paying it.
  *
- * Nothing needs to be undone at Privy — a payment is only ever submitted once
- * it has the approvals it needs, so rejecting simply closes it out here and it
- * can never be settled.
+ * Two distinct acts share this route: the governing group *rejecting* a
+ * payment, and the requester *withdrawing* their own. They close the payment
+ * the same way but mean different things, so the caller says which it is and
+ * the audit trail records it.
+ *
+ * Nothing needs undoing at Privy — a payment only reaches it once it already
+ * has the approvals it needs.
  */
 export async function POST(
   request: Request,
@@ -34,6 +38,17 @@ export async function POST(
         { status: 403 },
       );
     }
+
+    const { withdraw } = (await request.json().catch(() => ({}))) as { withdraw?: boolean };
+    // Only the person who raised it can withdraw it; anyone else in the group
+    // is rejecting it, whatever the client claims.
+    const withdrawn = Boolean(withdraw) && isRequester;
+    if (withdraw && !isRequester) {
+      return Response.json(
+        { error: 'Only the requester can withdraw this payment' },
+        { status: 403 },
+      );
+    }
     if (payment.status !== 'PENDING') {
       return Response.json(
         { error: `This payment is already ${payment.status.toLowerCase()}` },
@@ -57,17 +72,12 @@ export async function POST(
           requestId: payment.id,
           actorId: member.id,
           type: 'REJECTED',
-          payload: JSON.stringify({
-            by: member.name,
-            // Withdrawing your own request reads differently from an approver
-            // turning it down, and the trail should say which happened.
-            withdrawn: isRequester && !inGroup,
-          }),
+          payload: JSON.stringify({ by: member.name, withdrawn }),
         },
       }),
     ]);
 
-    return Response.json({ status: 'REJECTED' });
+    return Response.json({ status: 'REJECTED', withdrawn });
   } catch (error) {
     return (
       sessionErrorResponse(error, '[api/requests reject]') ??

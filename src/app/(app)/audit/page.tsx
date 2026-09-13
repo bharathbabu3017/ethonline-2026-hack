@@ -17,6 +17,10 @@ interface AuditEvent {
 
 const TONE: Record<string, 'green' | 'amber' | 'red' | 'indigo' | 'neutral'> = {
   ORG_CREATED: 'indigo',
+  GROUP_CREATED: 'indigo',
+  WALLET_UPDATED: 'green',
+  WALLET_UPDATE_FAILED: 'red',
+  WALLET_CHANGE_APPROVED: 'amber',
   REQUEST_SUBMITTED: 'neutral',
   APPROVED: 'amber',
   EXECUTED: 'green',
@@ -26,6 +30,10 @@ const TONE: Record<string, 'green' | 'amber' | 'red' | 'indigo' | 'neutral'> = {
 
 const LABEL: Record<string, string> = {
   ORG_CREATED: 'Organization created',
+  GROUP_CREATED: 'Approval group created',
+  WALLET_UPDATED: 'Treasury updated',
+  WALLET_UPDATE_FAILED: 'Treasury update failed',
+  WALLET_CHANGE_APPROVED: 'Treasury change approved',
   REQUEST_SUBMITTED: 'Payment requested',
   APPROVED: 'Approved',
   EXECUTED: 'Paid',
@@ -124,7 +132,17 @@ function describe(e: AuditEvent): string {
     case 'FAILED':
       return `${amount} to ${payee} could not be paid.`;
     case 'REJECTED':
-      return `${who} rejected ${amount} to ${payee}.`;
+      return e.payload.withdrawn
+        ? `${who} withdrew their request for ${amount} to ${payee}.`
+        : `${who} rejected ${amount} to ${payee}.`;
+    case 'GROUP_CREATED':
+      return `${who} created the "${e.payload.name}" group — ${e.payload.threshold} approval${e.payload.threshold === 1 ? '' : 's'} from ${e.payload.members} member${e.payload.members === 1 ? '' : 's'}.`;
+    case 'WALLET_CHANGE_APPROVED':
+      return `${who} approved a treasury change: ${e.payload.change}.`;
+    case 'WALLET_UPDATED':
+      return `Treasury updated — ${e.payload.change}, on ${e.payload.approvals} approvals.`;
+    case 'WALLET_UPDATE_FAILED':
+      return `Treasury change failed — ${e.payload.change}.`;
     default:
       return `${who} — ${e.type}`;
   }
