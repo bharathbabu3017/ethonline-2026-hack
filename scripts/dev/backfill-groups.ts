@@ -14,6 +14,7 @@ for (const org of await db.org.findMany({ include: { members: true, groups: true
   }
   const approvers = org.members.filter((m) => m.role !== 'MEMBER').map((m) => m.id);
   const all = org.members.map((m) => m.id);
+  const adminId = org.members.find((m) => m.role === 'ADMIN')?.id;
   if (all.length === 0) {
     console.log(`${org.name}: no members, skipping`);
     continue;
@@ -27,6 +28,7 @@ for (const org of await db.org.findMany({ include: { members: true, groups: true
     maxAmountMicros: org.thresholdMicros,
     memberIds: all,
     isDefault: true,
+    proposedById: adminId,
   });
 
   if (approvers.length >= 2) {
@@ -37,6 +39,7 @@ for (const org of await db.org.findMany({ include: { members: true, groups: true
       threshold: 2,
       maxAmountMicros: null,
       memberIds: approvers,
+      proposedById: adminId,
     });
   }
   console.log(`${org.name}: groups created`);

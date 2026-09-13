@@ -36,6 +36,21 @@ export default function Groups() {
   const { data, error, loading, reload } = useApi<{ groups: ApprovalGroup[] }>('/api/groups');
   const { data: orgData } = useApi<OrgResponse>('/api/org');
   const [creating, setCreating] = useState(false);
+  const [attaching, setAttaching] = useState<string | null>(null);
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  async function requestAttach(groupId: string) {
+    setAttachError(null);
+    setAttaching(groupId);
+    try {
+      await apiFetch(`/api/groups/${groupId}/attach`, { method: 'POST' });
+      await reload();
+    } catch (e) {
+      setAttachError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setAttaching(null);
+    }
+  }
 
   const isAdmin = orgData?.me?.role === 'ADMIN';
 
@@ -60,6 +75,7 @@ export default function Groups() {
 
       {loading && <Skeleton className="h-64" />}
       {error && <ErrorNote>{error}</ErrorNote>}
+      {attachError && <ErrorNote>{attachError}</ErrorNote>}
 
       <div className="grid gap-4 md:grid-cols-2">
         {(data?.groups ?? []).map((g) => (
@@ -101,11 +117,21 @@ export default function Groups() {
             <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-neutral-100 pt-3">
               {g.isDefault && <Badge tone="indigo">Default</Badge>}
               {g.youCanApprove && <Badge tone="green">You can approve</Badge>}
-              {!g.attachedToWallet && (
-                <Link href="/approvals" className="text-xs text-indigo-600 hover:underline">
-                  Needs approvals to attach →
-                </Link>
-              )}
+              {!g.attachedToWallet &&
+                (isAdmin ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => requestAttach(g.id)}
+                    disabled={attaching !== null}
+                  >
+                    {attaching === g.id ? 'Requesting…' : 'Attach to treasury'}
+                  </Button>
+                ) : (
+                  <Link href="/approvals" className="text-xs text-indigo-600 hover:underline">
+                    Awaiting attachment →
+                  </Link>
+                ))}
             </div>
           </Card>
         ))}

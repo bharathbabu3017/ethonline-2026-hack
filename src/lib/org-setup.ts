@@ -203,6 +203,9 @@ export async function createOrganization(input: CreateOrgInput) {
   // Contractors) without anything being special-cased.
   const approverMemberIds = org.members.filter((m) => m.role !== 'MEMBER').map((m) => m.id);
   const allMemberIds = org.members.map((m) => m.id);
+  // The admin who created the org proposes attaching the starting groups; their
+  // fellow approvers sign it off like any other treasury change.
+  const adminMemberId = org.members.find((m) => m.role === 'ADMIN')?.id;
 
   await createApprovalGroup({
     orgId: org.id,
@@ -212,6 +215,7 @@ export async function createOrganization(input: CreateOrgInput) {
     maxAmountMicros: thresholdMicros,
     memberIds: allMemberIds,
     isDefault: true,
+    proposedById: adminMemberId,
   });
 
   await createApprovalGroup({
@@ -221,6 +225,7 @@ export async function createOrganization(input: CreateOrgInput) {
     threshold: 2,
     maxAmountMicros: null,
     memberIds: approverMemberIds,
+    proposedById: adminMemberId,
   });
 
   return org;
