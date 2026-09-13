@@ -9,7 +9,7 @@ import { TreasuryChanges } from '@/components/treasury-changes';
 import type { PaymentRow } from '../payments/page';
 
 export default function Approvals() {
-  const { data, error, loading, reload } = useApi<{ requests: PaymentRow[] }>('/api/requests');
+  const { data, error, loading, reload } = useApi<{ requests: PaymentRow[] }>('/api/requests', { pollMs: 8000 });
 
   const waiting = (data?.requests ?? []).filter((r) => r.status === 'PENDING');
 

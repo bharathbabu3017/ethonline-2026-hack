@@ -12,7 +12,7 @@ import { activeChain } from '@/lib/chain';
 
 export default function PaymentDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { data, error, loading, reload } = useApi<{ requests: PaymentRow[] }>('/api/requests');
+  const { data, error, loading, reload } = useApi<{ requests: PaymentRow[] }>('/api/requests', { pollMs: 8000 });
 
   if (loading) return <Skeleton className="h-80" />;
   if (error) return <ErrorNote>{error}</ErrorNote>;

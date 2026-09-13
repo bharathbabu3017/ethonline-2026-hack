@@ -27,7 +27,7 @@ export interface WalletChange {
  * as sensitive as spending.
  */
 export function TreasuryChanges() {
-  const { data, reload } = useApi<{ changes: WalletChange[] }>('/api/wallet-changes');
+  const { data, reload } = useApi<{ changes: WalletChange[] }>('/api/wallet-changes', { pollMs: 8000 });
   const approveChange = useApproveChange();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

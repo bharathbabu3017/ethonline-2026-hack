@@ -40,7 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { ready, authenticated, logout } = usePrivy();
-  const { data, loading } = useApi<OrgResponse>(authenticated ? '/api/org' : null);
+  const { data, loading } = useApi<OrgResponse>(authenticated ? '/api/org' : null, { pollMs: 15000 });
 
   // Send people where they can actually do something: sign in, or set up an org.
   useEffect(() => {

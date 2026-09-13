@@ -55,7 +55,7 @@ const MATCHES: Record<(typeof FILTERS)[number], (r: PaymentRow) => boolean> = {
 };
 
 export default function Payments() {
-  const { data, error, loading } = useApi<{ requests: PaymentRow[] }>('/api/requests');
+  const { data, error, loading } = useApi<{ requests: PaymentRow[] }>('/api/requests', { pollMs: 10000 });
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>('All');
   const [query, setQuery] = useState('');
 

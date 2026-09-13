@@ -6,7 +6,7 @@ import type { OrgResponse } from '@/components/app-shell';
 import { Badge, Card, ErrorNote, Mono, Skeleton, Stat } from '@/components/ui';
 
 export default function Dashboard() {
-  const { data, error, loading } = useApi<OrgResponse>('/api/org');
+  const { data, error, loading } = useApi<OrgResponse>('/api/org', { pollMs: 15000 });
 
   if (loading) {
     return (
@@ -89,17 +89,23 @@ export default function Dashboard() {
             Anyone on the team submits a payment with an invoice attached.
           </Step>
           <Step n={2}>
-            <strong>Up to {formatUsdc(threshold)} USDC</strong> — the requester&apos;s own
-            signature clears it, because Privy&apos;s policy caps what that quorum may
-            authorize.
+            It is assigned an{' '}
+            <a className="text-indigo-600 underline" href="/groups">
+              approval group
+            </a>{' '}
+            — a rule naming who may approve, how many of them, and up to what amount.
           </Step>
           <Step n={3}>
-            <strong>Above {formatUsdc(threshold)} USDC</strong> — that signature is refused,
-            and two approvers must sign before funds can move.
+            Each approver signs in their own browser with their own Privy key. PayGate
+            never holds signing material, so it cannot approve on anyone&apos;s behalf.
           </Step>
           <Step n={4}>
-            Privy enforces both rules inside its secure enclave. PayGate cannot override
-            them — see <a className="text-indigo-600 underline" href="/controls">Controls</a>.
+            Once enough signatures exist, they go to Privy together, which checks them
+            against the treasury&apos;s key quorum before moving anything. See{' '}
+            <a className="text-indigo-600 underline" href="/controls">
+              Controls
+            </a>
+            .
           </Step>
         </ol>
       </Card>
