@@ -8,6 +8,16 @@ carries a rule — who can approve it, how many of them, and up to what amount.
 Built on [Privy](https://privy.io) organization wallets, key quorums and policies. Settles in
 USDC, EURC, WETH and ETH on Base Sepolia.
 
+## Demo
+
+A full walkthrough of every flow — organization setup, approval groups, submitting a payment with
+an invoice, single-signature and two-approver settlement, treasury administration, and the audit
+trail.
+
+[![PayGate demo — full walkthrough](https://img.youtube.com/vi/EPf3Y5yPvyY/maxresdefault.jpg)](https://youtu.be/EPf3Y5yPvyY)
+
+<p align="center"><a href="https://youtu.be/EPf3Y5yPvyY"><strong>▶ Watch the full demo</strong></a></p>
+
 ---
 
 ## The problem
