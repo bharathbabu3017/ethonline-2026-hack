@@ -64,8 +64,13 @@ model ApprovalGroup {
   /// Signatures required before a payment assigned to this group may settle.
   threshold Int @default(1)
 
-  /// Largest payment this group may release, in micro-USDC. Null means no cap.
+  /// Largest single payment this group may release, in whole units of whichever
+  /// asset is being paid. Null means no cap.
   maxAmountMicros BigInt?
+
+  /// Assets this group may release, as a comma-separated list of symbols.
+  /// Null means every asset the chain supports.
+  allowedAssets String?
 
   /// Used when a payment does not name a group, and as the fallback that must
   /// always exist so an org can never be left unable to pay.
@@ -183,7 +188,12 @@ model PaymentRequest {
   payeeMember   Member? @relation("PayeeMember", fields: [payeeMemberId], references: [id])
   payeeLabel    String
 
+  /// Amount in the asset's own base units — micro-USDC, wei, and so on.
+  /// Named for its USDC origins; decimals come from assetSymbol.
   amountMicros BigInt
+  /// Which treasury asset is being paid. Null on rows predating multi-asset,
+  /// which are all USDC.
+  assetSymbol  String?
   memo         String
 
   route         String  @default("AUTO") // AUTO | QUORUM, kept for older rows

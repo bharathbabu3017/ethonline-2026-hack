@@ -1,7 +1,6 @@
 import { requireMember, sessionErrorResponse } from '@/lib/session';
 import { db } from '@/lib/db';
 import { createApprovalGroup } from '@/lib/approval-groups';
-import { toMicros } from '@/lib/money';
 
 /** The org's approval rules, with their members. */
 export async function GET(request: Request) {
@@ -20,6 +19,7 @@ export async function GET(request: Request) {
         description: g.description,
         threshold: g.threshold,
         maxAmountMicros: g.maxAmountMicros?.toString() ?? null,
+        allowedAssets: g.allowedAssets ? g.allowedAssets.split(',') : null,
         isDefault: g.isDefault,
         attachedToWallet: g.attachedToWallet,
         privyQuorumId: g.privyQuorumId,
@@ -53,6 +53,7 @@ export async function POST(request: Request) {
       threshold?: number;
       maxAmount?: string | null;
       memberIds?: string[];
+      allowedAssets?: string[];
     };
 
     const name = body.name?.trim();
@@ -63,13 +64,18 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Approvals required must be 1 or more' }, { status: 400 });
     }
 
+    // Stored in whole units: a cap of 10,000 means 10,000 of whichever asset is
+    // being paid, converted to that asset's decimals when the policy is built.
     let maxAmountMicros: bigint | null = null;
-    if (body.maxAmount != null && String(body.maxAmount).trim() !== '') {
-      try {
-        maxAmountMicros = toMicros(String(body.maxAmount));
-      } catch (e) {
-        return Response.json({ error: (e as Error).message }, { status: 400 });
+    const rawCap = String(body.maxAmount ?? '').trim();
+    if (rawCap !== '') {
+      if (!/^\d+$/.test(rawCap) || BigInt(rawCap) <= 0n) {
+        return Response.json(
+          { error: 'Enter the limit as a whole number, or leave it blank for no limit' },
+          { status: 400 },
+        );
       }
+      maxAmountMicros = BigInt(rawCap);
     }
 
     const group = await createApprovalGroup({
@@ -79,6 +85,7 @@ export async function POST(request: Request) {
       threshold,
       maxAmountMicros,
       memberIds: body.memberIds ?? [],
+      allowedAssets: body.allowedAssets,
       proposedById: member.id,
     });
 

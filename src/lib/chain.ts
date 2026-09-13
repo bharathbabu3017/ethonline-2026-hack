@@ -30,12 +30,32 @@ import type { Chain } from 'viem';
  */
 export type BroadcastMode = 'privy-broadcast' | 'self-broadcast';
 
+/**
+ * A treasury asset.
+ *
+ * `address` is null for the chain's native currency, which moves as `value` on
+ * a plain transfer rather than as ERC-20 calldata — the two need different
+ * transactions and different policy rules.
+ */
+export interface TokenConfig {
+  symbol: string;
+  name: string;
+  address: `0x${string}` | null;
+  decimals: number;
+  /** Pays gas on this chain. Kept fully spendable, but warned about in the UI. */
+  isGasToken?: boolean;
+  /** Roughly one unit = one dollar, so a shared numeric limit is meaningful. */
+  isStable?: boolean;
+}
+
 export interface ChainConfig {
   chain: Chain;
   /** CAIP-2 identifier Privy expects, e.g. "eip155:84532". */
   caip2: `eip155:${number}`;
   /** ERC-20 USDC on this chain. Always the 6-decimal view. */
   usdcAddress: `0x${string}`;
+  /** Everything the treasury can hold and pay out. First entry is the default. */
+  tokens: TokenConfig[];
   broadcastMode: BroadcastMode;
   /** The RPC method the payment intent uses. Policy rules must target the same one. */
   rpcMethod: 'eth_sendTransaction' | 'eth_signTransaction';
@@ -55,6 +75,35 @@ const BASE_SEPOLIA: ChainConfig = {
   caip2: 'eip155:84532',
   // Circle's canonical testnet USDC. Verified on-chain: symbol USDC, decimals 6.
   usdcAddress: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+  tokens: [
+    {
+      symbol: 'USDC',
+      name: 'USD Coin',
+      address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+      decimals: 6,
+      isStable: true,
+    },
+    {
+      symbol: 'EURC',
+      name: 'Euro Coin',
+      address: '0x808456652fdb597867f38412077A9182bf77359F',
+      decimals: 6,
+      isStable: true,
+    },
+    {
+      symbol: 'WETH',
+      name: 'Wrapped Ether',
+      address: '0x4200000000000000000000000000000000000006',
+      decimals: 18,
+    },
+    {
+      symbol: 'ETH',
+      name: 'Ether',
+      address: null,
+      decimals: 18,
+      isGasToken: true,
+    },
+  ],
   broadcastMode: 'privy-broadcast',
   rpcMethod: 'eth_sendTransaction',
   explorerTxUrl: (hash) => `https://sepolia.basescan.org/tx/${hash}`,
@@ -78,6 +127,19 @@ const ARC_TESTNET: ChainConfig = {
   // On Arc this is the 6-decimal ERC-20 view of the same balance that pays gas.
   // The 18-decimal native view exists too; never add the two together.
   usdcAddress: '0x3600000000000000000000000000000000000000',
+  // On Arc the native balance and the USDC ERC-20 are the same pool of funds
+  // seen two ways, so only the 6-decimal ERC-20 view is listed. Listing both
+  // would double-count the treasury.
+  tokens: [
+    {
+      symbol: 'USDC',
+      name: 'USD Coin',
+      address: '0x3600000000000000000000000000000000000000',
+      decimals: 6,
+      isStable: true,
+      isGasToken: true,
+    },
+  ],
   broadcastMode: 'self-broadcast',
   rpcMethod: 'eth_signTransaction',
   explorerTxUrl: (hash) => `https://testnet.arcscan.app/tx/${hash}`,
@@ -106,3 +168,9 @@ export const activeChainKey: ChainKey = selected;
 
 /** USDC is 6 decimals on every chain PayGate supports. */
 export const USDC_DECIMALS = 6;
+
+/** Look up a treasury asset by symbol, falling back to the chain's default. */
+export function tokenBySymbol(symbol?: string | null): TokenConfig {
+  const match = activeChain.tokens.find((t) => t.symbol === symbol);
+  return match ?? activeChain.tokens[0];
+}

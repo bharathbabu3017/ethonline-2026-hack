@@ -1,9 +1,9 @@
 import { requireMember, sessionErrorResponse } from '@/lib/session';
 import { db } from '@/lib/db';
-import { toMicros } from '@/lib/money';
+import { toBaseUnits } from '@/lib/money';
 import { storeInvoice, InvalidUploadError } from '@/lib/invoices';
-import { normalizeAddress, transferCalldata } from '@/lib/payments';
-import { activeChain } from '@/lib/chain';
+import { buildTransfer, normalizeAddress } from '@/lib/payments';
+import { activeChain, tokenBySymbol } from '@/lib/chain';
 import { approvalsRequired } from '@/lib/settlement';
 import { suggestGroup } from '@/lib/approval-groups';
 
@@ -33,6 +33,7 @@ export async function GET(request: Request) {
         payeeLabel: r.payeeLabel,
         payeeAddress: r.payeeAddress,
         amountMicros: r.amountMicros.toString(),
+        assetSymbol: r.assetSymbol ?? tokenBySymbol(null).symbol,
         memo: r.memo,
         route: r.route,
         status: r.status,
@@ -74,9 +75,13 @@ export async function POST(request: Request) {
     const memo = String(form.get('memo') ?? '').trim();
     const payeeType = String(form.get('payeeType') ?? 'ADDRESS');
 
+    const assetSymbol = String(form.get('asset') ?? activeChain.tokens[0].symbol);
+    const token = activeChain.tokens.find((t) => t.symbol === assetSymbol);
+    if (!token) return bad(`${assetSymbol} is not a treasury asset`);
+
     let amountMicros: bigint;
     try {
-      amountMicros = toMicros(amountRaw);
+      amountMicros = toBaseUnits(amountRaw, assetSymbol);
     } catch (e) {
       return bad((e as Error).message);
     }
@@ -129,24 +134,27 @@ export async function POST(request: Request) {
         where: { id: requestedGroupId, orgId: org.id },
       });
       if (!group) return bad('That approval group does not exist');
-      if (group.maxAmountMicros !== null && amountMicros > group.maxAmountMicros) {
-        return bad(
-          `"${group.name}" can release at most ${group.maxAmountMicros / 1_000_000n} USDC`,
-        );
+      const allowed = group.allowedAssets?.split(',') ?? null;
+      if (allowed && !allowed.includes(assetSymbol)) {
+        return bad(`"${group.name}" cannot release ${assetSymbol}`);
+      }
+      if (group.maxAmountMicros !== null) {
+        const cap = group.maxAmountMicros * 10n ** BigInt(token.decimals);
+        if (amountMicros > cap) {
+          return bad(
+            `"${group.name}" can release at most ${group.maxAmountMicros} ${assetSymbol} per payment`,
+          );
+        }
       }
     } else {
-      group = await suggestGroup(org.id, amountMicros);
+      group = await suggestGroup(org.id, amountMicros, assetSymbol);
     }
 
     const route = amountMicros <= org.thresholdMicros ? 'AUTO' : 'QUORUM';
 
     // The exact transaction that will be submitted once approved. Stored so
     // what gets executed is fixed at submit time and cannot drift afterwards.
-    const transaction = {
-      to: activeChain.usdcAddress,
-      data: transferCalldata(payeeAddress, amountMicros),
-      value: '0x0',
-    };
+    const transaction = buildTransfer(token, payeeAddress, amountMicros);
 
     const created = await db.paymentRequest.create({
       data: {
@@ -157,6 +165,7 @@ export async function POST(request: Request) {
         payeeMemberId,
         payeeLabel,
         amountMicros,
+        assetSymbol,
         memo,
         route,
         groupId: group?.id ?? null,
@@ -172,6 +181,7 @@ export async function POST(request: Request) {
             type: 'REQUEST_SUBMITTED',
             payload: JSON.stringify({
               amountMicros: amountMicros.toString(),
+              asset: assetSymbol,
               payeeLabel,
               payeeAddress,
               route,

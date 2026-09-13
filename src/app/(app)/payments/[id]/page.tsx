@@ -3,7 +3,7 @@
 import { use } from 'react';
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import { Badge, Card, DataRow, ErrorNote, Skeleton, Truncated } from '@/components/ui';
 import { InvoiceLink } from '@/components/invoice-link';
 import { ApproveActions } from '@/components/approve-actions';
@@ -31,7 +31,7 @@ export default function PaymentDetail({ params }: { params: Promise<{ id: string
         <div className="mt-2 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {formatUsdc(BigInt(payment.amountMicros))} USDC
+              {formatAmount(BigInt(payment.amountMicros), payment.assetSymbol)} {payment.assetSymbol}
             </h1>
             <p className="mt-1 text-sm text-neutral-600">
               to {payment.payeeLabel} · {payment.memo}

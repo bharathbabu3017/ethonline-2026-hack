@@ -1,7 +1,8 @@
 import type { PolicyCreateParams } from '@privy-io/node/resources';
 import { privyApi } from './privy-server';
-import { activeChain } from './chain';
+import { activeChain, tokenBySymbol, type TokenConfig } from './chain';
 import { toPolicyHex } from './money';
+import { parseUnits } from 'viem';
 import { db } from './db';
 import { proposeGroupAttachment } from './wallet-changes';
 
@@ -43,51 +44,74 @@ const TRANSFER_ABI = [
 ] as const;
 
 /**
- * The policy for a group: USDC only, this chain only, and at most the group's
- * cap. Privy policies are allowlists, so anything not matched here is denied.
+ * The policy for a group: one ALLOW rule per asset it may release.
+ *
+ * Privy evaluates only the policy of whichever signer authorizes a transaction,
+ * so this is what gives a group its own spending limit. Native and ERC-20
+ * transfers need different rules — a native transfer is bounded by the
+ * transaction's `value`, an ERC-20 by the decoded `transfer.amount`.
+ *
+ * The cap is entered in whole units and converted per asset, so "10,000" means
+ * 10,000 USDC and 10,000 EURC. An admin choosing to include a volatile asset in
+ * a capped group is choosing that meaning for it too.
  */
 function buildGroupPolicy(
   orgName: string,
   groupName: string,
-  maxAmountMicros: bigint | null,
+  maxAmount: bigint | null,
+  tokens: TokenConfig[],
 ): PolicyCreateParams {
-  const conditions: PolicyCreateParams.Rule['conditions'] = [
-    {
-      field_source: 'ethereum_transaction',
-      field: 'to',
-      operator: 'eq',
-      value: activeChain.usdcAddress,
-    },
-    {
-      field_source: 'ethereum_transaction',
-      field: 'chain_id',
-      operator: 'eq',
-      value: String(activeChain.chain.id),
-    },
-  ];
+  const rules: PolicyCreateParams.Rule[] = tokens.map((token) => {
+    const conditions: PolicyCreateParams.Rule['conditions'] = [
+      {
+        field_source: 'ethereum_transaction',
+        field: 'chain_id',
+        operator: 'eq',
+        value: String(activeChain.chain.id),
+      },
+    ];
 
-  if (maxAmountMicros !== null) {
-    conditions.push({
-      field_source: 'ethereum_calldata',
-      field: 'transfer.amount',
-      abi: TRANSFER_ABI,
-      operator: 'lte',
-      value: toPolicyHex(maxAmountMicros),
-    });
-  }
+    if (token.address === null) {
+      // Native: the amount is the transaction value.
+      if (maxAmount !== null) {
+        conditions.push({
+          field_source: 'ethereum_transaction',
+          field: 'value',
+          operator: 'lte',
+          value: toPolicyHex(parseUnits(maxAmount.toString(), token.decimals)),
+        });
+      }
+    } else {
+      conditions.push({
+        field_source: 'ethereum_transaction',
+        field: 'to',
+        operator: 'eq',
+        value: token.address,
+      });
+      if (maxAmount !== null) {
+        conditions.push({
+          field_source: 'ethereum_calldata',
+          field: 'transfer.amount',
+          abi: TRANSFER_ABI,
+          operator: 'lte',
+          value: toPolicyHex(parseUnits(maxAmount.toString(), token.decimals)),
+        });
+      }
+    }
+
+    return {
+      name: `${token.symbol}${maxAmount === null ? '' : ` up to ${maxAmount}`}`,
+      method: activeChain.rpcMethod,
+      action: 'ALLOW' as const,
+      conditions,
+    };
+  });
 
   return {
     version: '1.0',
     name: displayName(orgName, groupName),
     chain_type: 'ethereum',
-    rules: [
-      {
-        name: maxAmountMicros === null ? 'Allow USDC transfers' : 'Allow USDC up to the cap',
-        method: activeChain.rpcMethod,
-        action: 'ALLOW',
-        conditions,
-      },
-    ],
+    rules,
   };
 }
 
@@ -99,6 +123,8 @@ export interface CreateGroupInput {
   maxAmountMicros: bigint | null;
   memberIds: string[];
   isDefault?: boolean;
+  /// Symbols this group may release. Empty or omitted means every asset.
+  allowedAssets?: string[];
   /// Member proposing the change. Omitted during org setup, where there is no
   /// one yet to sign and the starting groups are PayGate-enforced.
   proposedById?: string;
@@ -126,8 +152,15 @@ export async function createApprovalGroup(input: CreateGroupInput) {
     display_name: displayName(org.name, input.name),
   });
 
+  // Which assets this group may touch, and therefore which rules its policy needs.
+  const permitted =
+    input.allowedAssets && input.allowedAssets.length > 0
+      ? activeChain.tokens.filter((t) => input.allowedAssets!.includes(t.symbol))
+      : activeChain.tokens;
+  if (permitted.length === 0) throw new Error('Pick at least one asset this group can release');
+
   const policy = await privyApi.policies.create(
-    buildGroupPolicy(org.name, input.name, input.maxAmountMicros),
+    buildGroupPolicy(org.name, input.name, input.maxAmountMicros, permitted),
   );
 
   const group = await db.approvalGroup.create({
@@ -140,6 +173,10 @@ export async function createApprovalGroup(input: CreateGroupInput) {
       attachedToWallet: false,
       threshold: input.threshold,
       maxAmountMicros: input.maxAmountMicros,
+      allowedAssets:
+        input.allowedAssets && input.allowedAssets.length > 0
+          ? input.allowedAssets.join(',')
+          : null,
       isDefault: input.isDefault ?? false,
       members: { create: members.map((m) => ({ memberId: m.id })) },
     },
@@ -165,11 +202,15 @@ export async function createApprovalGroup(input: CreateGroupInput) {
  * The group a payment of this size should default to: the cheapest rule that
  * still permits the amount, so small payments do not drag in extra approvers.
  */
-export async function suggestGroup(orgId: string, amountMicros: bigint) {
+export async function suggestGroup(orgId: string, amountMicros: bigint, assetSymbol?: string) {
   const groups = await db.approvalGroup.findMany({ where: { orgId } });
-  const permits = groups.filter(
-    (g) => g.maxAmountMicros === null || amountMicros <= g.maxAmountMicros,
-  );
+  const token = tokenBySymbol(assetSymbol);
+  const permits = groups.filter((g) => {
+    const allowed = g.allowedAssets?.split(',') ?? null;
+    if (allowed && !allowed.includes(token.symbol)) return false;
+    if (g.maxAmountMicros === null) return true;
+    return amountMicros <= g.maxAmountMicros * 10n ** BigInt(token.decimals);
+  });
   const pool = permits.length > 0 ? permits : groups;
   return (
     pool.sort((a, b) => a.threshold - b.threshold || Number(a.createdAt) - Number(b.createdAt))[0] ??

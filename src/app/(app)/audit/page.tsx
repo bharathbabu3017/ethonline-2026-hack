@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import { activeChain } from '@/lib/chain';
 import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from '@/components/ui';
 
@@ -12,7 +12,13 @@ interface AuditEvent {
   actor: string | null;
   at: string;
   payload: Record<string, unknown>;
-  request: { id: string; payeeLabel: string; amountMicros: string; memo: string } | null;
+  request: {
+    id: string;
+    payeeLabel: string;
+    amountMicros: string;
+    assetSymbol: string | null;
+    memo: string;
+  } | null;
 }
 
 const TONE: Record<string, 'green' | 'amber' | 'red' | 'indigo' | 'neutral'> = {
@@ -106,7 +112,9 @@ export default function Audit() {
 
 function describe(e: AuditEvent): string {
   const who = e.actor ?? 'Someone';
-  const amount = e.request ? `${formatUsdc(BigInt(e.request.amountMicros))} USDC` : '';
+  const amount = e.request
+    ? `${formatAmount(BigInt(e.request.amountMicros), e.request.assetSymbol)} ${e.request.assetSymbol ?? 'USDC'}`
+    : '';
   const payee = e.request?.payeeLabel ?? '';
 
   switch (e.type) {

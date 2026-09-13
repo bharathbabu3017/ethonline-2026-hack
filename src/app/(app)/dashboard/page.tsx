@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
 import type { PaymentRow } from '../payments/page';
 import type { ApprovalGroup } from '../groups/page';
@@ -41,22 +41,31 @@ export default function Dashboard() {
   if (!data?.org) return null;
 
   const { org } = data;
-  const balance = BigInt(org.balanceMicros);
   const rows = payments?.requests ?? [];
 
   const pending = rows.filter((r) => r.status === 'PENDING');
   const waitingOnYou = pending.filter((r) => r.youCanApprove && !r.youApproved);
   const paid = rows.filter((r) => r.status === 'EXECUTED');
-  const paidTotal = paid.reduce((sum, r) => sum + BigInt(r.amountMicros), 0n);
-  const pendingTotal = pending.reduce((sum, r) => sum + BigInt(r.amountMicros), 0n);
+
+  // Amounts in different assets are not addable — micro-USDC and wei are not
+  // the same unit. Totals are therefore per-asset, and the headline figures are
+  // counts.
+  const sumFor = (list: PaymentRow[], symbol: string) =>
+    list
+      .filter((r) => r.assetSymbol === symbol)
+      .reduce((sum, r) => sum + BigInt(r.amountMicros), 0n);
+
+  const primary = org.balances[0]?.symbol ?? 'USDC';
+  const paidPrimary = sumFor(paid, primary);
+  const pendingPrimary = sumFor(pending, primary);
 
   return (
     <>
       <PageHeader
         title={org.name}
-        description={`Shared USDC treasury on ${org.chain.name}, governed by ${
-          groupData?.groups.length ?? 0
-        } approval rules.`}
+        description={`Shared treasury on ${org.chain.name}, holding ${
+          org.balances.length
+        } assets under ${groupData?.groups.length ?? 0} approval rules.`}
         action={
           <Link href="/payments/new">
             <Button>New payment</Button>
@@ -66,14 +75,20 @@ export default function Dashboard() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat
-          label="Available"
-          value={`${formatUsdc(balance)} USDC`}
-          hint={org.chain.gasIsUsdc ? 'Also covers gas' : 'Gas paid separately in ETH'}
+          label={`Available ${primary}`}
+          value={formatAmount(BigInt(org.balances[0]?.balance ?? '0'), primary)}
+          hint={`${org.balances.filter((b) => BigInt(b.balance) > 0n).length} of ${
+            org.balances.length
+          } assets funded`}
         />
         <Stat
           label="Awaiting approval"
-          value={formatUsdc(pendingTotal)}
-          hint={`${pending.length} payment${pending.length === 1 ? '' : 's'} in the queue`}
+          value={String(pending.length)}
+          hint={
+            pendingPrimary > 0n
+              ? `${formatAmount(pendingPrimary, primary)} ${primary} queued`
+              : 'Nothing queued'
+          }
         />
         <Stat
           label="Waiting on you"
@@ -83,13 +98,17 @@ export default function Dashboard() {
         />
         <Stat
           label="Paid to date"
-          value={formatUsdc(paidTotal)}
-          hint={`${paid.length} settled payment${paid.length === 1 ? '' : 's'}`}
+          value={String(paid.length)}
+          hint={
+            paidPrimary > 0n
+              ? `${formatAmount(paidPrimary, primary)} ${primary} settled`
+              : 'Nothing settled yet'
+          }
         />
       </div>
 
-      {balance === 0n && (
-        <Card title="Fund the treasury" description="Nothing can be paid until it holds USDC.">
+      {org.balances.every((b) => BigInt(b.balance) === 0n) && (
+        <Card title="Fund the treasury" description="Nothing can be paid until it holds funds.">
           <div className="rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 py-2.5">
             <Truncated value={org.walletAddress} head={20} tail={12} />
           </div>
@@ -134,7 +153,8 @@ export default function Dashboard() {
                       href={`/payments/${r.id}`}
                       className="text-sm font-medium hover:underline"
                     >
-                      {formatUsdc(BigInt(r.amountMicros))} USDC — {r.payeeLabel}
+                      {formatAmount(BigInt(r.amountMicros), r.assetSymbol)} {r.assetSymbol} —{' '}
+                      {r.payeeLabel}
                     </Link>
                     <p className="mt-0.5 truncate text-xs text-neutral-500">
                       {r.memo} · requested by {r.requester.name}
@@ -166,7 +186,7 @@ export default function Dashboard() {
                   </div>
                   <p className="mt-0.5 text-xs text-neutral-500">
                     {g.maxAmountMicros
-                      ? `Up to ${formatUsdc(BigInt(g.maxAmountMicros))} USDC`
+                      ? `Up to ${g.maxAmountMicros} per payment`
                       : 'No limit'}{' '}
                     · {g.members.length} approver{g.members.length === 1 ? '' : 's'}
                   </p>
@@ -177,6 +197,24 @@ export default function Dashboard() {
                   No approval rules yet.
                 </li>
               )}
+            </ul>
+          </Card>
+
+          <Card title="Treasury assets" bodyClassName="">
+            <ul className="divide-y divide-neutral-100">
+              {org.balances.map((b) => (
+                <li key={b.symbol} className="flex items-baseline justify-between px-5 py-2.5">
+                  <span className="text-sm">
+                    {b.symbol}
+                    {b.isGasToken && (
+                      <span className="ml-1.5 text-xs text-neutral-400">gas</span>
+                    )}
+                  </span>
+                  <span className="text-sm font-medium tabular-nums">
+                    {formatAmount(BigInt(b.balance), b.symbol)}
+                  </span>
+                </li>
+              ))}
             </ul>
           </Card>
 

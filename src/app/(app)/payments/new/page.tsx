@@ -5,9 +5,10 @@ import { useRouter } from 'next/navigation';
 import { getAccessToken } from '@privy-io/react-auth';
 import { useApi } from '@/lib/use-api';
 import { useApprovePayment } from '@/lib/use-approve';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import type { OrgResponse } from '@/components/app-shell';
 import type { ApprovalGroup } from '../../groups/page';
+import { activeChain } from '@/lib/chain';
 import { Button, Card, ErrorNote, Field, PageHeader, inputClass } from '@/components/ui';
 
 export default function NewPayment() {
@@ -18,6 +19,7 @@ export default function NewPayment() {
   const approvePayment = useApprovePayment();
   const [payeeType, setPayeeType] = useState<'ADDRESS' | 'MEMBER'>('ADDRESS');
   const [amount, setAmount] = useState('');
+  const [asset, setAsset] = useState(activeChain.tokens[0].symbol);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -25,7 +27,11 @@ export default function NewPayment() {
   const org = orgData?.org;
   const threshold = org ? BigInt(org.thresholdMicros) : null;
 
-  const amountMicros = parseAmount(amount);
+  const token = activeChain.tokens.find((t) => t.symbol === asset) ?? activeChain.tokens[0];
+  const amountMicros = parseAmount(amount, token.decimals);
+  const balance = org?.balances.find((b) => b.symbol === asset);
+  const overBalance =
+    balance !== undefined && amountMicros !== null && amountMicros > BigInt(balance.balance);
   const groups = groupData?.groups ?? [];
 
   // Which rule will govern this payment: the explicit choice, or the cheapest
@@ -36,13 +42,18 @@ export default function NewPayment() {
     amountMicros === null
       ? null
       : [...groups]
-          .filter((g) => g.maxAmountMicros === null || amountMicros <= BigInt(g.maxAmountMicros))
+          .filter((g) => !g.allowedAssets || g.allowedAssets.includes(asset))
+          .filter(
+            (g) =>
+              g.maxAmountMicros === null ||
+              amountMicros <= BigInt(g.maxAmountMicros) * 10n ** BigInt(token.decimals),
+          )
           .sort((a, b) => a.threshold - b.threshold)[0] ?? null;
   const effective = chosen ?? suggested;
   const overGroupLimit =
     chosen?.maxAmountMicros != null &&
     amountMicros !== null &&
-    amountMicros > BigInt(chosen.maxAmountMicros);
+    amountMicros > BigInt(chosen.maxAmountMicros) * 10n ** BigInt(token.decimals);
 
   // Members can only be paid once they have signed in and been given a wallet.
   const payableMembers = (org?.members ?? []).filter((m) => !m.isYou);
@@ -146,17 +157,46 @@ export default function NewPayment() {
 
         <Card title="Amount and details">
           <div className="space-y-4">
-            <Field label="Amount (USDC)">
-              <input
-                required
-                name="amount"
-                inputMode="decimal"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="250.00"
-                className={inputClass}
-              />
-            </Field>
+            <input type="hidden" name="asset" value={asset} />
+            <div className="grid gap-4 sm:grid-cols-[1fr_150px]">
+              <Field label="Amount">
+                <input
+                  required
+                  name="amount"
+                  inputMode="decimal"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="250.00"
+                  className={inputClass}
+                />
+              </Field>
+              <Field label="Asset">
+                <select
+                  value={asset}
+                  onChange={(e) => setAsset(e.target.value)}
+                  className={inputClass}
+                >
+                  {activeChain.tokens.map((t) => (
+                    <option key={t.symbol} value={t.symbol}>
+                      {t.symbol}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+
+            {balance && (
+              <p className="-mt-1 text-xs text-neutral-500">
+                Treasury holds {formatAmount(BigInt(balance.balance), asset)} {asset}
+                {token.isGasToken && ' — also used for gas, so leave some spare'}
+              </p>
+            )}
+
+            {overBalance && (
+              <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-800">
+                More than the treasury holds in {asset}.
+              </div>
+            )}
 
             <Field
               label="Approval group"
@@ -172,9 +212,7 @@ export default function NewPayment() {
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name} — {g.threshold} approval{g.threshold === 1 ? '' : 's'}
-                    {g.maxAmountMicros
-                      ? `, up to ${formatUsdc(BigInt(g.maxAmountMicros))} USDC`
-                      : ''}
+                    {g.maxAmountMicros ? `, up to ${g.maxAmountMicros} per payment` : ''}
                   </option>
                 ))}
               </select>
@@ -183,7 +221,7 @@ export default function NewPayment() {
             {overGroupLimit && chosen?.maxAmountMicros && (
               <div className="rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-800">
                 {chosen.name} can release at most{' '}
-                {formatUsdc(BigInt(chosen.maxAmountMicros))} USDC. Pick another group or
+                {String(chosen.maxAmountMicros)} {asset} per payment. Pick another group or
                 lower the amount.
               </div>
             )}
@@ -234,7 +272,7 @@ export default function NewPayment() {
         {error && <ErrorNote>{error}</ErrorNote>}
 
         <div className="flex items-center gap-3">
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || overBalance}>
             {busy ? 'Submitting…' : 'Submit payment'}
           </Button>
           <Button type="button" variant="ghost" onClick={() => router.back()}>
@@ -247,9 +285,9 @@ export default function NewPayment() {
 }
 
 /** Mirrors the server's parsing so the preview cannot disagree with the outcome. */
-function parseAmount(input: string): bigint | null {
+function parseAmount(input: string, decimals: number): bigint | null {
   const trimmed = input.trim();
-  if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) return null;
+  if (!new RegExp(`^\\d+(\\.\\d{1,${decimals}})?$`).test(trimmed)) return null;
   const [whole, frac = ''] = trimmed.split('.');
-  return BigInt(whole) * 1_000_000n + BigInt(frac.padEnd(6, '0'));
+  return BigInt(whole) * 10n ** BigInt(decimals) + BigInt(frac.padEnd(decimals, '0'));
 }

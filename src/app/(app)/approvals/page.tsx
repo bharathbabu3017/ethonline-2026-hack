@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import { Badge, Card, EmptyState, ErrorNote, PageHeader, Skeleton } from '@/components/ui';
 import { ApproveActions } from '@/components/approve-actions';
 import { TreasuryChanges } from '@/components/treasury-changes';
@@ -43,7 +43,7 @@ export default function Approvals() {
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <Link href={`/payments/${r.id}`} className="font-medium hover:underline">
-                      {formatUsdc(BigInt(r.amountMicros))} USDC
+                      {formatAmount(BigInt(r.amountMicros), r.assetSymbol)} {r.assetSymbol}
                     </Link>
                     {r.group && <Badge tone="neutral">{r.group.name}</Badge>}
                     {r.approvalsRequired > 1 && (

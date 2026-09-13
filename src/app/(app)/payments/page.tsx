@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { formatAmount } from '@/lib/money';
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ export interface PaymentRow {
   payeeLabel: string;
   payeeAddress: string;
   amountMicros: string;
+  assetSymbol: string;
   memo: string;
   route: 'AUTO' | 'QUORUM';
   status: string;
@@ -179,7 +180,10 @@ export default function Payments() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right font-medium tabular-nums">
-                      {formatUsdc(BigInt(r.amountMicros))}
+                      {formatAmount(BigInt(r.amountMicros), r.assetSymbol)}
+                      <span className="ml-1 text-xs font-normal text-neutral-500">
+                        {r.assetSymbol}
+                      </span>
                     </td>
                     <td className="px-5 py-3">
                       <Badge tone={STATUS_TONE[r.status] ?? 'neutral'}>
@@ -205,7 +209,7 @@ export default function Payments() {
 /** Download the visible rows as CSV — what a finance team will actually want. */
 function exportCsv(rows: PaymentRow[]) {
   const header = [
-    'Date', 'Payee', 'Address', 'Amount USDC', 'Description',
+    'Date', 'Payee', 'Address', 'Amount', 'Asset', 'Description',
     'Status', 'Route', 'Approvals', 'Requested by', 'Transaction',
   ];
   const escape = (v: string) => `"${v.replace(/"/g, '""')}"`;
@@ -214,7 +218,8 @@ function exportCsv(rows: PaymentRow[]) {
       new Date(r.createdAt).toISOString(),
       r.payeeLabel,
       r.payeeAddress,
-      formatUsdc(BigInt(r.amountMicros)).replace(/,/g, ''),
+      formatAmount(BigInt(r.amountMicros), r.assetSymbol).replace(/,/g, ''),
+      r.assetSymbol,
       r.memo,
       STATUS_LABEL[r.status] ?? r.status,
       r.route,

@@ -1,6 +1,6 @@
 import { encodeFunctionData, erc20Abi, isAddress, getAddress } from 'viem';
 import { privy } from './privy-server';
-import { activeChain } from './chain';
+import { activeChain, tokenBySymbol, type TokenConfig } from './chain';
 import { publicClient } from './treasury';
 
 /**
@@ -103,3 +103,28 @@ export function normalizeStatus(status: string | undefined): string {
       return 'PENDING';
   }
 }
+
+/**
+ * The transaction that moves one asset.
+ *
+ * A native transfer carries the amount as `value` with no calldata; an ERC-20
+ * transfer carries zero value and encodes the amount into a call to the token.
+ * They are different transactions, and the policy rules that govern them differ
+ * too — see buildGroupPolicy.
+ */
+export function buildTransfer(
+  token: TokenConfig,
+  to: `0x${string}`,
+  amount: bigint,
+): { to: `0x${string}`; data?: `0x${string}`; value: string } {
+  if (token.address === null) {
+    return { to, value: `0x${amount.toString(16)}` };
+  }
+  return {
+    to: token.address,
+    data: transferCalldata(to, amount),
+    value: '0x0',
+  };
+}
+
+export { tokenBySymbol };

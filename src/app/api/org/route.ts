@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 import { createOrganization, type MemberInput } from '@/lib/org-setup';
 import { activeChain } from '@/lib/chain';
 import { toMicros } from '@/lib/money';
-import { treasuryBalance } from '@/lib/treasury';
+import { treasuryBalances } from '@/lib/treasury';
 
 /** The org the caller belongs to, plus their membership and the live balance. */
 export async function GET(request: Request) {
@@ -17,7 +17,9 @@ export async function GET(request: Request) {
     if (!member) return Response.json({ org: null }, { status: 200 });
 
     const { org } = member;
-    const balance = await treasuryBalance(org.walletAddress as `0x${string}`);
+    const balances = await treasuryBalances(org.walletAddress as `0x${string}`);
+    // Kept for callers that still read a single headline figure.
+    const balance = balances.find((b) => b.symbol === 'USDC')?.balance ?? 0n;
 
     return Response.json({
       org: {
@@ -26,6 +28,13 @@ export async function GET(request: Request) {
         walletAddress: org.walletAddress,
         thresholdMicros: org.thresholdMicros.toString(),
         balanceMicros: balance.toString(),
+        balances: balances.map((b) => ({
+          symbol: b.symbol,
+          name: b.name,
+          balance: b.balance.toString(),
+          isGasToken: b.isGasToken,
+          isStable: b.isStable,
+        })),
         chain: {
           name: activeChain.chain.name,
           id: activeChain.chain.id,

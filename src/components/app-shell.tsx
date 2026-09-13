@@ -14,6 +14,13 @@ export interface OrgResponse {
     walletAddress: string;
     thresholdMicros: string;
     balanceMicros: string;
+    balances: {
+      symbol: string;
+      name: string;
+      balance: string;
+      isGasToken: boolean;
+      isStable: boolean;
+    }[];
     chain: {
       name: string;
       id: number;

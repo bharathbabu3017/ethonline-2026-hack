@@ -19,7 +19,13 @@ export async function GET(request: Request) {
         take: 200,
         include: {
           request: {
-            select: { id: true, payeeLabel: true, amountMicros: true, memo: true },
+            select: {
+              id: true,
+              payeeLabel: true,
+              amountMicros: true,
+              assetSymbol: true,
+              memo: true,
+            },
           },
         },
       }),
@@ -48,6 +54,7 @@ export async function GET(request: Request) {
               id: e.request.id,
               payeeLabel: e.request.payeeLabel,
               amountMicros: e.request.amountMicros.toString(),
+              assetSymbol: e.request.assetSymbol,
               memo: e.request.memo,
             }
           : null,

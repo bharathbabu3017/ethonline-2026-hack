@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { apiFetch, useApi } from '@/lib/use-api';
-import { formatUsdc } from '@/lib/money';
+import { activeChain } from '@/lib/chain';
 import type { OrgResponse } from '@/components/app-shell';
 import {
   Badge,
@@ -24,6 +24,7 @@ export interface ApprovalGroup {
   description: string | null;
   threshold: number;
   maxAmountMicros: string | null;
+  allowedAssets: string[] | null;
   isDefault: boolean;
   attachedToWallet: boolean;
   privyQuorumId: string;
@@ -77,12 +78,12 @@ export default function Groups() {
 
             <dl className="mt-4 divide-y divide-neutral-100">
               <DataRow
-                label="Limit"
-                value={
-                  g.maxAmountMicros
-                    ? `${formatUsdc(BigInt(g.maxAmountMicros))} USDC`
-                    : 'No limit'
-                }
+                label="Limit per payment"
+                value={g.maxAmountMicros ? `${g.maxAmountMicros} per asset` : 'No limit'}
+              />
+              <DataRow
+                label="Assets"
+                value={g.allowedAssets ? g.allowedAssets.join(', ') : 'All'}
               />
               <DataRow label="Approvers" value={g.members.map((m) => m.name).join(', ') || '—'} />
               <DataRow
@@ -133,6 +134,7 @@ function NewGroupForm({
   const [threshold, setThreshold] = useState(2);
   const [maxAmount, setMaxAmount] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
+  const [assets, setAssets] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -146,7 +148,14 @@ function NewGroupForm({
     try {
       await apiFetch('/api/groups', {
         method: 'POST',
-        body: { name, description, threshold, maxAmount: maxAmount || null, memberIds: selected },
+        body: {
+          name,
+          description,
+          threshold,
+          maxAmount: maxAmount || null,
+          memberIds: selected,
+          allowedAssets: assets,
+        },
       });
       onCreated();
     } catch (err) {
@@ -188,9 +197,12 @@ function NewGroupForm({
               className={inputClass}
             />
           </Field>
-          <Field label="Limit (USDC)" hint="Leave blank for no limit.">
+          <Field
+            label="Limit per payment"
+            hint="In whole units of whichever asset is paid. Blank for no limit."
+          >
             <input
-              inputMode="decimal"
+              inputMode="numeric"
               value={maxAmount}
               onChange={(e) => setMaxAmount(e.target.value)}
               placeholder="50000"
@@ -198,6 +210,32 @@ function NewGroupForm({
             />
           </Field>
         </div>
+
+        <Field label="Assets this group can release" hint="None selected means all of them.">
+          <div className="flex flex-wrap gap-2">
+            {activeChain.tokens.map((t) => {
+              const on = assets.includes(t.symbol);
+              return (
+                <button
+                  key={t.symbol}
+                  type="button"
+                  onClick={() =>
+                    setAssets((prev) =>
+                      on ? prev.filter((a) => a !== t.symbol) : [...prev, t.symbol],
+                    )
+                  }
+                  className={`rounded-lg border px-3 py-1.5 text-sm transition ${
+                    on
+                      ? 'border-neutral-900 bg-neutral-900 text-white'
+                      : 'border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50'
+                  }`}
+                >
+                  {t.symbol}
+                </button>
+              );
+            })}
+          </div>
+        </Field>
 
         <Field label="Who can approve">
           <div className="space-y-1.5">
