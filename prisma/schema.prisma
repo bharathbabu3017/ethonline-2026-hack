@@ -86,12 +86,11 @@ model PaymentRequest {
   memo         String
 
   route         String  @default("AUTO") // AUTO | QUORUM, decided at submit
-  privyIntentId String? @unique // kept as an audit record; not the execution path
-
-  // The exact request every approver signs, canonicalized once at submit so
-  // each signature covers identical bytes. Sent to Privy with the collected
-  // signatures once the threshold is met. Optional only so payments created
-  // before this path existed still load.
+  privyIntentId String? @unique // unused; retained to avoid a destructive migration
+  // The exact transaction every approver signs, fixed at submit time so each
+  // signature covers identical bytes. Submitted to Privy with the collected
+  // signatures once the approval threshold is met. Optional only so payments
+  // created before this path existed still load.
   requestBody   String?
   status        String  @default("PENDING") // PENDING PROCESSING EXECUTED FAILED REJECTED EXPIRED
   txHash        String?

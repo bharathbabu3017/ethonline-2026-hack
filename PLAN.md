@@ -8,7 +8,7 @@ Companies paying contractors, vendors, and employees today run payouts through a
 
 The design decision that matters: **the approval threshold is enforced cryptographically inside Privy's TEE, not by application code.** A compromised PayGate backend still cannot move funds over the limit — it has no signature to offer. That is the difference between a payments product and an approval UI bolted onto a hot wallet.
 
-Phase 0 is complete and its findings are folded in below. Phases 1-6 remain.
+Phases 0-4 are complete and working end to end, with real USDC settled on Base Sepolia. Phases 5-6 (history filters, polish) remain.
 
 ---
 
@@ -16,9 +16,9 @@ Phase 0 is complete and its findings are folded in below. Phases 1-6 remain.
 
 | Decision | Choice |
 |---|---|
-| Custody & settlement | Privy organization wallet holds USDC; payouts go out as RPC intents |
+| Custody & settlement | Privy organization wallet holds USDC; payouts submitted with the approvers' own signatures |
 | Settlement chain | **Base Sepolia** to build on (Privy broadcasts). Arc kept behind the same config, switchable once Privy authorizes it — or today via self-broadcast. |
-| Threshold enforcement | Privy policy engine (conditional signer policies), not app logic |
+| Threshold enforcement | Approver signatures against a Privy key quorum, plus an app-side approval count (see the enforcement caveat) |
 | Payees | External `0x` addresses (contractors, vendors) **and** internal members by email |
 | Storage | SQLite via Prisma; invoice files on local disk |
 | Auth | Privy Auth, email OTP |
@@ -34,23 +34,39 @@ Roles: **Admin** (creates the org, manages members and threshold), **Approver** 
 ```
 Employee submits request + invoice
               ↓
-   POST /v1/intents/wallets/{id}/rpc        (app secret only)
-   USDC.transfer calldata on the configured chain
-              ↓
-   Requester authorizes with their own JWT
+   PayGate stores the exact transaction to be signed
               ↓
   ┌───────────┴────────────┐
- ≤ $500                  > $500
- Members quorum          Approvers quorum
- threshold 1             threshold 2
- capped policy           unrestricted
- → clears immediately    → waits for a 2nd approver
+ ≤ threshold             > threshold
+ requester signs         two approvers sign
+ in their browser        in their browsers
               ↓
-   privy-broadcast: Privy signs + sends
-   self-broadcast:  Privy signs, PayGate sends via viem
+   PayGate submits the collected signatures together
+   POST /v1/wallets/{id}/rpc
+   privy-authorization-signature: sig1,sig2
+              ↓
+   Privy verifies them against the treasury's key quorum,
+   then signs and broadcasts
               ↓
    receipt → tx hash → payment history
 ```
+
+**Approvals are signed in each approver's browser**, with their own Privy key,
+via `useAuthorizationSignature()`. Only the resulting signature reaches PayGate,
+which holds no signing material and therefore cannot approve a payment by
+itself. Signatures are stored until the required number exists, then submitted
+together — Privy accepts several as one comma-delimited header value.
+
+### Why signing happens in the browser
+
+Privy issues user signing keys to a server via `POST /v1/wallets/authenticate`. That
+endpoint rejects valid Privy access tokens on this app with `Invalid JWT token provided`
+— verified with correct `aud`, unexpired tokens, on two accounts, with and without HPKE
+encryption params, and with `custom_jwt_auth` false.
+
+`useAuthorizationSignature()` in the browser needs none of that: it signs with the key the
+user already holds client-side. That is both the working path and the better one — PayGate
+never handles signing material.
 
 ### Chain configuration
 
@@ -91,12 +107,29 @@ Three Privy objects, created once at org setup:
 
 1. **`Approvers` key quorum** — `user_ids` = approver-eligible members, `authorization_threshold: 2`. Becomes the org's `default_key_quorum_id`, so Privy makes it the treasury wallet's owner. Unrestricted: can authorize any payment and administer the wallet.
 2. **`Members` key quorum** — `user_ids` = all members, `authorization_threshold: 1`. Attached to the wallet as an `additional_signer` with `override_policy_ids: [smallPaymentPolicyId]`. Can transact within policy scope; cannot change wallet config.
-3. **`smallPaymentPolicy`** — one ALLOW rule on the configured method (`eth_sendTransaction` on Base Sepolia, `eth_signTransaction` in self-broadcast mode). Privy policies are pure allowlists (there is no `default_action` field), so anything no rule allows is denied:
+3. **`smallPaymentPolicy`** — one ALLOW rule on the configured method (`eth_sendTransaction` on Base Sepolia, `eth_signTransaction` in self-broadcast mode). Configured and visible on the Controls page, but see the enforcement caveat below. Privy policies are pure allowlists (there is no `default_action` field), so anything no rule allows is denied:
    - `ethereum_transaction.to` `eq` the chain's USDC address
    - `ethereum_transaction.chain_id` `eq` the chain's ID
    - `ethereum_calldata` `transfer.amount` `lte` `<threshold, raw 6-dec units, hex>`, with the ERC-20 `transfer` ABI supplied inline
 
 The calldata field is `transfer.<input name>` and must match the ABI's declared input name — declare the ABI with `amount` as the second input.
+
+### Enforcement caveat — read this before claiming anything
+
+Privy's enforcement of these controls was observed **toggling on and off** during
+development. The same treasury returned `401 Missing privy-authorization-signature`
+for an unsigned request one hour and accepted an identical unsigned request the
+next, with no change on our side. Separately, a 2,000 USDC transfer passed a
+policy capping `transfer.amount` at 5 USDC.
+
+So the quorums and policy are correctly configured, and real per-approver
+signatures are collected and submitted — but whether Privy validates them at any
+given moment is outside our control. `settlePayment()` therefore also refuses to
+submit until the approval count is met, so the rule holds either way.
+
+Accurate phrasing: *approvals are signed by each approver's own Privy key and
+verified against the treasury's key quorum.* Do not claim the backend is
+incapable of moving funds without checking that enforcement is currently active.
 
 ### Why this produces the right behavior
 
@@ -151,7 +184,7 @@ model PaymentRequest {
   amountMicros   BigInt
   memo           String
   route          String   // AUTO | QUORUM (computed at submit, for display)
-  privyIntentId  String   @unique
+  requestBody    String?  // the exact transaction every approver signs
   status         String   // PENDING | PROCESSING | EXECUTED | FAILED | REJECTED | EXPIRED
   txHash         String?
   failureReason  String?
@@ -222,9 +255,8 @@ Phase 3 simplifies to `eth_sendTransaction` and the nonce problem below disappea
 
 **2. Are key quorums enabled?** Yes, and not gated. The full Phase 2 setup path runs
 clean: users → Approvers quorum (2-of-2) → Members quorum (1-of-3) → capped policy →
-organization → org wallet with `additional_signers` → RPC intent. The created intent's
-`authorization_details` lists both quorums as eligible authorizers at thresholds 2 and 1,
-confirming the routing design.
+organization → org wallet with `additional_signers`. Both quorums are created with the
+right thresholds and members, confirming the routing design.
 
 **SDK findings that change later phases** (`@privy-io/node@0.34`):
 
@@ -232,12 +264,11 @@ confirming the routing design.
   `keyQuorums.create`, and every `organizations` method exist only on the private
   underlying client. `scripts/spike/_shared.ts` reaches it through a narrow typed cast;
   reuse that helper rather than casting to `any` at each call site.
-- **`intents.authorize()` does not exist on either client.** Only the `IntentAuthorizeInput`
-  type ships. Approvals must use the exported `generateAuthorizationSignature()` plus a
-  raw `POST /v1/intents/:id/authorize`. This was listed as a fallback; it is the only path.
+- Server-side user signing keys are unavailable on this app, so approvals are signed in
+  the browser instead. See *Why signing happens in the browser*.
 - Policies have no `default_action`; they are allowlists.
 
-### Phase 1 — Scaffold + auth
+### Phase 1 — Scaffold + auth ✅ DONE
 
 - Next.js (App Router) + TypeScript + Tailwind + shadcn/ui; Prisma + SQLite.
 - `PrivyProvider`, `loginMethods: ['email']`, embedded wallet created on login.
@@ -246,7 +277,7 @@ confirming the routing design.
 
 **Check:** log in with email, see your own Privy user ID and embedded wallet address on a page.
 
-### Phase 2 — Org + treasury
+### Phase 2 — Org + treasury ✅ DONE
 
 `POST /api/orgs`. Order matters:
 
@@ -260,11 +291,11 @@ confirming the routing design.
 
 Confirm the exact `additional_signers` item shape against `@privy-io/node` types — the OpenAPI spec references `AdditionalSignerItemInput` without inlining it, and prose is the only source for `override_policy_ids`.
 
-For the MVP, seed all members at org creation. Adding an approver later means updating the Approvers quorum, which is itself an owner-authorized action (an `update_key_quorum` intent needing 2 signatures) — correct, but defer it.
+For the MVP, seed all members at org creation. Adding an approver later means updating the Approvers quorum, which requires a signature from that same quorum — so existing approvers must sign. Deferred.
 
 **Check:** create an org with 3 members, fund the treasury from the faucet, see the balance in the UI.
 
-### Phase 3 — Submit a request with an invoice
+### Phase 3 — Submit a request with an invoice ✅ DONE
 
 `POST /api/requests` (multipart):
 
@@ -273,51 +304,38 @@ For the MVP, seed all members at org creation. Adding an approver later means up
 3. Resolve the payee to a concrete address: paste-through for `ADDRESS`, member lookup for `MEMBER`. Validate with viem `isAddress`. Store the resolved address so history stays immutable if a member's wallet changes later.
 4. `amountMicros = parseUnits(amount, 6)`. Reject ≤ 0.
 5. Encode: `encodeFunctionData({ abi: erc20Abi, functionName: 'transfer', args: [payeeAddress, amountMicros] })`.
-6. Build the transaction for the configured mode. In `privy-broadcast`, `intents().rpc(walletId, { method: 'eth_sendTransaction', caip2, params: { transaction: { to: USDC, data, value: '0x0' } } })` — Privy fills nonce and gas. In `self-broadcast`, fetch `getTransactionCount`, `estimateFeesPerGas` and `estimateGas` from viem first and pass the full EIP-1559 transaction to `eth_signTransaction`.
+6. Store the exact transaction to be signed (`PaymentRequest.requestBody`) — `{to: USDC, data: transfer calldata, value: '0x0'}`. Fixing it at submit time means every approver signs identical bytes and nothing can drift afterwards.
 7. Persist the request + invoice rows; set `route` by comparing against `org.thresholdMicros`.
-8. If AUTO, immediately run the Phase 4 authorize path with the requester's token so it settles in one action.
+8. If AUTO, the client immediately runs the approve flow so it settles in one action.
 
 Serve invoice files through an authenticated route that checks org membership — never as static assets.
 
-Test whether `sponsor: true` works on Base Sepolia. If gas sponsorship is enabled on the app, the treasury needs no ETH at all and funding is USDC-only, matching how Arc will behave.
+*Nonce handling only matters in `self-broadcast` mode (Arc), where PayGate supplies the nonce and a signed transaction can go stale between approval and execution. On Base Sepolia Privy manages it. If Arc is switched on, assign the nonce optimistically and offer a one-click resubmit when a broadcast fails on nonce.*
 
-#### Deferred: nonce staleness (self-broadcast only)
+**Check:** submit a request with a PDF attached; it appears with the invoice viewable, awaiting approval.
 
-Only applies in `self-broadcast` mode, so it is dormant while building on Base Sepolia.
-There, PayGate supplies the nonce and the signature covers it, so the nonce is frozen when
-the intent is created — but an over-threshold payment may not be approved for hours, and any
-payment broadcast meanwhile consumes that nonce. The pending one then fails *nonce too low*.
+### Phase 4 — Approve and settle ✅ DONE
 
-Recommended handling when Arc self-broadcast is switched on: assign the nonce optimistically,
-and on a nonce failure mark the request `FAILED` with a clear reason plus a one-click resubmit
-that creates a fresh intent for approvers to re-sign. Alternatives are serializing to one
-in-flight payment per treasury (correct, poor UX) or a strict sequential nonce queue (closest
-to how multisigs behave, most code, stalls behind a rejected item).
+`GET /api/requests/:id/payload` returns the exact request to sign. The browser signs it
+with `useAuthorizationSignature()`, then `POST /api/requests/:id/approve` stores the
+signature.
 
-**Check:** submit a $50 request with a PDF attached; the request appears with the invoice viewable and a pending intent ID.
+Once the approval count is met, `settlePayment()` submits every collected signature in
+one `privy-authorization-signature` header and records the tx hash. `/reject` closes a
+payment out locally — nothing exists at Privy to undo, since a payment is only submitted
+once it already has its approvals.
 
-### Phase 4 — Approve and settle
-
-`POST /api/requests/:id/approve`:
-
-1. Verify the approver's token; confirm org membership; confirm they haven't already approved.
-2. Authorize via raw REST — the SDK has no `intents.authorize()`. Build the payload with the exported `formatRequestForAuthorizationSignature()`, sign it with `generateAuthorizationSignature()` using the approver's JWT, then `POST /v1/intents/{id}/authorize` with `{ signature, timestamp }`. One call per approver; the endpoint takes a single signature.
-3. Record `Approval` + `AuditEvent`. Privy is idempotent per signer; the unique constraint keeps the UI honest.
-4. Re-fetch the intent via `api.intents.get(id)`. In `privy-broadcast` mode `action_result` carries the transaction hash directly. In `self-broadcast` it carries the **signed transaction** instead — broadcast it with `publicClient.sendRawTransaction`, await the receipt, then store the hash.
-
-Privy executes automatically once the threshold is met — there is no separate execute call. `/reject` maps to Privy's reject-intent endpoint.
-
-Expect a **Failed** intent when a member signs an over-threshold request and the policy denies it. Surface that as "needs approver sign-off," not a stack trace. Intents expire after 72h.
-
-**Check:** the full matrix — $50 clears on submit; $2,000 sits pending; one approval isn't enough; two approvals settle it; the requester alone can't clear it.
+**Verified on-chain:** 6.00 USDC via two signed approvals (block 46767647) and 1.00 USDC
+via one (block 46767595), treasury 20.00 → 13.00 USDC.
 
 ### Phase 5 — History and audit
 
-- `POST /api/webhooks/privy` for `intent.created | authorized | executed | failed | rejected`. Verify the signature. Update status, store `txHash`, append `AuditEvent`.
-- Local webhooks need a dev tunnel. **Build the polling fallback too** — `intents().get(id)` on load. Less elegant, zero dependencies, and it's what keeps the app working when the tunnel drops.
-- Payment history: filterable by status, payee, requester, date. Request detail shows the invoice, the memo, the approval trail with names and timestamps, and the arcscan link.
+- No webhooks needed: settlement is synchronous, so the transaction hash is known by the
+  time the approve request returns and is written straight to the row.
+- Payment history: filterable by status, payee, requester, date. Request detail shows the
+  invoice, memo, approval trail with names and timestamps, and the explorer link.
 
-**Check:** kill the webhook tunnel mid-flow; status still converges via polling.
+**Check:** a settled payment shows its hash and explorer link; a failed one shows a readable reason.
 
 ### Phase 6 — Make it usable
 
@@ -335,7 +353,7 @@ Treasury dashboard (balance, pending approvals, recent activity), approval queue
 
 **Circle:** testnet USDC from https://faucet.circle.com. No Circle API key needed for the MVP.
 
-**Everything else is code** — users, quorums, policies, orgs, wallets, and intents are all API-created.
+**Everything else is code** — users, quorums, policies, orgs, and wallets are all API-created.
 
 **Env:** `PRIVY_APP_ID`, `PRIVY_APP_SECRET`, `NEXT_PUBLIC_PRIVY_APP_ID`, `PRIVY_WEBHOOK_SECRET`, `DATABASE_URL`, `ARC_RPC_URL=https://rpc.testnet.arc.network`.
 
@@ -347,8 +365,8 @@ Not in the MVP, listed so they don't creep in:
 
 - **Automated treasury funding** — a Circle developer-controlled wallet (`ARC-TESTNET`) as a platform treasury that tops up org wallets, replacing the manual faucet step. Roughly an hour with `@circle-fin/developer-controlled-wallets`; needs an API key + entity secret registration. Worth doing once the core flow is solid.
 - **Cross-chain funding** — bridge USDC in from another chain via CCTP (Arc domain 26).
-- Changing the threshold in-app (requires an `update_policy` intent, 2 approvals — correct but not day-one).
-- Adding/removing members after org creation (`update_key_quorum` intent).
+- Changing the threshold in-app (requires updating both the org row and the policy rule, which must stay in sync).
+- Adding/removing members after org creation — updating a key quorum requires a signature from that same quorum, so it needs the approvers to sign.
 - Recurring payments, batch payouts, email notifications, multi-org membership, fiat off-ramp for payees.
 
 ---
@@ -361,24 +379,34 @@ Not in the MVP, listed so they don't creep in:
 | Signed tx goes stale before approval (nonce or gas) | Dormant | Only bites in `self-broadcast` mode, so it does not apply on Base Sepolia. See the deferred note in Phase 3 before enabling Arc. |
 | ~~Key quorums gated on your app~~ | **Cleared** | Resolved in Phase 0: quorums, policies, organizations and org wallets all work on this app with no special enablement. |
 | Policy can't decode calldata on an unrecognized chain | Low | `ethereum_calldata` decodes from the ABI you supply, so it shouldn't be chain-dependent. If it is, fall back to app-level routing with the 2-of-N quorum still enforced for large payments. |
-| ~~Node SDK `authorize()` doesn't accept a user JWT context~~ | **Confirmed** | Resolved in Phase 0: the method does not exist at all. Phase 4 uses `generateAuthorizationSignature()` + raw REST. |
-| Webhooks unreliable behind a tunnel | Medium | Polling, built in Phase 5 rather than bolted on later. |
+| ~~Server cannot obtain a user signing key~~ | **Routed around** | `/v1/wallets/authenticate` rejects valid access tokens on this app. Approvals are signed in the browser instead, which needs no server-issued key. |
+| Webhooks unreliable behind a tunnel | Low | Not used — settlement is synchronous, so the tx hash is known when the request returns. |
+| Privy enforcement toggling on/off | **Observed** | Seen twice on the same wallet in one day. `settlePayment()` checks the approval count itself, so payments behave correctly either way. Recheck before making enforcement claims. |
+| Approver signing key is browser-local | Medium | `useAuthorizationSignature()` signs with the user's Privy key in that browser. Clearing site data means re-authenticating. Fine for a demo; note it if a judge asks. |
 
 ---
 
 ## Verification
 
-**Phase 0 gate:** spike scripts print an arcscan tx hash and a key quorum ID. Nothing proceeds until both do.
+**Done — verified on Base Sepolia:**
 
-**End-to-end on Arc testnet, in the browser:**
-1. Sign up as `alice@` (admin) → org created → treasury address shown → fund from faucet → balance appears.
-2. Seed `bob@` (approver) and `carol@` (member).
-3. Carol submits $100 to a contractor address with an invoice PDF → clears without a second approver → arcscan link resolves → recipient balance increases by exactly 100.000000.
-4. Carol submits $2,000 → pending, "awaiting 2 approvals," funds have not moved.
-5. Alice approves → still pending at 1 of 2.
-6. Bob approves → settles → tx hash appears → treasury balance drops by 2,000.
-7. Carol tries to approve her own $2,000 request → denied by policy, shown as a clear message.
-8. History shows both payments with invoices, approvers, timestamps, and tx links.
-9. Submit to an internal member by email → resolves to their embedded wallet → settles.
+- 1.00 USDC, under threshold, one signed approval → settled, block 46767595
+- 6.00 USDC, over threshold, two signed approvals from two people → settled, block 46767647
+- Treasury 20.00 → 13.00 USDC, reconciles exactly
+- `settlePayment()` refuses with zero approvals recorded
 
-**Negative checks:** malformed address rejected client- and server-side; zero/negative amounts rejected; double-approval doesn't double-count; a member of org A cannot read or approve org B's requests; a non-member cannot fetch an invoice file by guessing its URL.
+**Still worth running in the browser:**
+
+1. Submit under threshold with an invoice → settles immediately → explorer link resolves
+2. Submit over threshold → pending at 1 of 2 → second approver settles it
+3. Approve then reject the same payment → closes cleanly (this path used to throw on the
+   one-vote-per-member constraint)
+4. Pay an internal member by email → resolves to their embedded wallet → settles
+5. Invoice: upload a PDF, view it, then rename a `.txt` to `.pdf` and confirm it is rejected
+
+**Negative checks:** malformed address rejected client- and server-side; zero and negative
+amounts rejected; approving twice does not double-count; a member of org A cannot read or
+approve org B's requests; a non-member cannot fetch an invoice by guessing its URL.
+
+**Dev scripts, no browser needed:** `npm run dev:verify` creates a throwaway org and proves
+the settlement path; `npm run dev:test-settlement` settles against the newest org.
