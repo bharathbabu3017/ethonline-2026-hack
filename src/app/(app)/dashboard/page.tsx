@@ -108,6 +108,34 @@ export default function Dashboard() {
         />
       </div>
 
+      {(() => {
+        // A funded treasury with no gas fails at settlement, and the chain's
+        // error reads like a balance problem. Say so up front instead.
+        const gas = org.balances.find((b) => b.isGasToken);
+        const funded = org.balances.some((b) => !b.isGasToken && BigInt(b.balance) > 0n);
+        if (!gas || BigInt(gas.balance) > 0n || !funded) return null;
+        return (
+          <Card title={`No ${gas.symbol} for network fees`}>
+            <p className="text-sm text-neutral-700">
+              The treasury holds funds but cannot pay network fees, so payments will fail at
+              settlement. Send a small amount of {gas.symbol} to the treasury address.
+            </p>
+            <div className="mt-3">
+              <CopyField value={org.walletAddress} label="Treasury address" />
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {org.chain.faucets.map((f) => (
+                <a key={f.url} href={f.url} target="_blank" rel="noreferrer">
+                  <Button variant="secondary" size="sm">
+                    {f.label} ↗
+                  </Button>
+                </a>
+              ))}
+            </div>
+          </Card>
+        );
+      })()}
+
       {org.balances.every((b) => BigInt(b.balance) === 0n) && (
         <Card title="Fund the treasury" description="Nothing can be paid until it holds funds.">
           <CopyField value={org.walletAddress} label="Send funds to this address" />

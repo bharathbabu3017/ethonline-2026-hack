@@ -19,6 +19,9 @@ import { db } from './db';
 
 export class NotEnoughApprovals extends Error {}
 
+/** What pays network fees on this chain — ETH on most, USDC on Arc. */
+const GAS_ASSET = activeChain.gasIsUsdc ? 'USDC' : 'ETH';
+
 /**
  * How many approvals a payment needs before money may move.
  *
@@ -131,13 +134,19 @@ export async function settlePayment(paymentId: string) {
   }
 }
 
-/** Turn Privy's raw error text into something a finance person can act on. */
+/**
+ * Turn Privy's raw error text into something a finance person can act on.
+ *
+ * Order matters. A gas shortage reads as "insufficient funds for gas * price +
+ * value", which also matches the token-balance pattern — so gas is checked
+ * first, or a funded treasury with no gas gets told it has no money.
+ */
 function readableFailure(raw: string): string {
-  if (/exceeds balance|insufficient funds/i.test(raw)) {
-    return 'The treasury does not hold enough USDC to cover this payment.';
+  if (/insufficient funds for gas|gas \* price/i.test(raw)) {
+    return `The treasury has no ${GAS_ASSET} to pay network fees. Top it up and resubmit — the payment amount itself is fine.`;
   }
-  if (/gas/i.test(raw) && /insufficient/i.test(raw)) {
-    return 'The treasury has no gas. Top it up and resubmit.';
+  if (/exceeds balance|insufficient funds|transfer amount exceeds/i.test(raw)) {
+    return 'The treasury does not hold enough of this asset to cover the payment.';
   }
   if (/polic/i.test(raw)) {
     return 'A spending policy refused this payment.';
